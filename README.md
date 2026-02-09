@@ -71,7 +71,27 @@ if frame is not None:
     converted = convert_hand_frame_unity_left_to_right(frame)
 ```
 
+## Streaming Client API
+
+`HTSClient` provides a high-level sync stream with filtering and error policy controls.
+
+Key controls:
+- transport mode: `udp`, `tcp_server`, `tcp_client`
+- output mode: `packets`, `frames`, `both`
+- hand filter: `left`, `right`, `both`
+- parse error policy: `strict` (raise) or `tolerant` (skip malformed lines)
+
+```python
+from hand_tracking_sdk import HTSClient, HTSClientConfig, StreamOutput
+
+client = HTSClient(HTSClientConfig(output=StreamOutput.FRAMES))
+for event in client.iter_events():
+    print(event)
+```
+
 ## Protocol Reference
 
 - `../hand-tracking-streamer/README.md`
+https://github.com/wengmister/hand-tracking-streamer/blob/main/README.md
 - `../hand-tracking-streamer/CONNECTIONS.md`
+https://github.com/wengmister/hand-tracking-streamer/blob/main/CONNECTIONS.md

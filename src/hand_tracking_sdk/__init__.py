@@ -1,6 +1,15 @@
 """Public API surface for the Hand Tracking SDK."""
 
 from hand_tracking_sdk.__about__ import __version__
+from hand_tracking_sdk.client import (
+    ErrorPolicy,
+    HandFilter,
+    HTSClient,
+    HTSClientConfig,
+    StreamEvent,
+    StreamOutput,
+    TransportMode,
+)
 from hand_tracking_sdk.convert import (
     convert_hand_frame_unity_left_to_right,
     convert_landmarks_unity_left_to_right,
@@ -37,8 +46,12 @@ from hand_tracking_sdk.transport import (
 )
 
 __all__ = [
+    "ErrorPolicy",
     "HTSError",
+    "HTSClient",
+    "HTSClientConfig",
     "HandLandmarks",
+    "HandFilter",
     "HandFrame",
     "HandFrameAssembler",
     "HandSide",
@@ -46,6 +59,8 @@ __all__ = [
     "PacketType",
     "ParseError",
     "ParsedPacket",
+    "StreamEvent",
+    "StreamOutput",
     "TCPClientConfig",
     "TCPClientLineReceiver",
     "TCPServerConfig",
@@ -54,6 +69,7 @@ __all__ = [
     "TransportDisconnectedError",
     "TransportError",
     "TransportTimeoutError",
+    "TransportMode",
     "UDPLineReceiver",
     "UDPReceiverConfig",
     "WristPacket",
