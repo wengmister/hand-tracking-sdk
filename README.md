@@ -22,6 +22,18 @@ print(packet.side, packet.kind, packet.data)
 
 The parser validates packet label, side, and value count, and raises `ParseError` on malformed input.
 
+## Transport API
+
+The SDK includes socket transport primitives for line-based ingestion:
+- `UDPLineReceiver`
+- `TCPServerLineReceiver`
+- `TCPClientLineReceiver`
+
+Network timeout and disconnect behavior is reported through typed exceptions:
+- `TransportTimeoutError`
+- `TransportDisconnectedError`
+- `TransportClosedError`
+
 ## Protocol Reference
 
 - `../hand-tracking-streamer/README.md`
