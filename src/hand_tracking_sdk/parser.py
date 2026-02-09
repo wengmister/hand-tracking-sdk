@@ -1,0 +1,85 @@
+from hand_tracking_sdk.constants import LANDMARK_COUNT, LANDMARK_VALUE_COUNT, WRIST_VALUE_COUNT
+from hand_tracking_sdk.exceptions import ParseError
+from hand_tracking_sdk.models import (
+    HandLandmarks,
+    HandSide,
+    LandmarksPacket,
+    PacketType,
+    ParsedPacket,
+    WristPacket,
+    WristPose,
+)
+
+
+def parse_line(line: str) -> ParsedPacket:
+    """Parse one HTS UTF-8 CSV line into a typed packet.
+
+    Expected labels:
+    - Left wrist:
+    - Right wrist:
+    - Left landmarks:
+    - Right landmarks:
+    """
+    stripped = line.strip()
+    if not stripped:
+        raise ParseError("Empty line.")
+
+    head, sep, tail = stripped.partition(":")
+    if not sep:
+        raise ParseError("Missing ':' separator.")
+
+    label = head.strip()
+    payload = _parse_floats(tail)
+
+    side, kind = _parse_label(label)
+    if kind == PacketType.WRIST:
+        return _parse_wrist(side=side, values=payload)
+    return _parse_landmarks(side=side, values=payload)
+
+
+def _parse_label(label: str) -> tuple[HandSide, PacketType]:
+    parts = label.split()
+    if len(parts) != 2:
+        raise ParseError(f"Invalid label: {label!r}")
+
+    side_raw, kind_raw = parts
+
+    try:
+        side = HandSide(side_raw)
+    except ValueError as exc:
+        raise ParseError(f"Unsupported hand side: {side_raw!r}") from exc
+
+    normalized_kind = kind_raw.lower()
+    if normalized_kind == PacketType.WRIST.value:
+        return side, PacketType.WRIST
+    if normalized_kind == PacketType.LANDMARKS.value:
+        return side, PacketType.LANDMARKS
+    raise ParseError(f"Unsupported packet type: {kind_raw!r}")
+
+
+def _parse_floats(payload: str) -> list[float]:
+    chunks = [chunk.strip() for chunk in payload.split(",") if chunk.strip()]
+    try:
+        return [float(value) for value in chunks]
+    except ValueError as exc:
+        raise ParseError("Payload contains non-float values.") from exc
+
+
+def _parse_wrist(side: HandSide, values: list[float]) -> WristPacket:
+    if len(values) != WRIST_VALUE_COUNT:
+        raise ParseError(f"Wrist packet must contain {WRIST_VALUE_COUNT} values, got {len(values)}")
+
+    pose = WristPose(*values)
+    return WristPacket(side=side, kind=PacketType.WRIST, data=pose)
+
+
+def _parse_landmarks(side: HandSide, values: list[float]) -> LandmarksPacket:
+    if len(values) != LANDMARK_VALUE_COUNT:
+        raise ParseError(
+            f"Landmarks packet must contain {LANDMARK_VALUE_COUNT} values, got {len(values)}"
+        )
+
+    points = tuple(
+        (values[i], values[i + 1], values[i + 2]) for i in range(0, LANDMARK_COUNT * 3, 3)
+    )
+    return LandmarksPacket(side=side, kind=PacketType.LANDMARKS, data=HandLandmarks(points=points))
