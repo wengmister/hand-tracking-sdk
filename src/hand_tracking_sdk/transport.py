@@ -247,6 +247,13 @@ class TCPServerLineReceiver:
         self.close()
 
     def _ensure_client(self) -> None:
+        """Ensure one TCP client connection is available for reads.
+
+        :raises TransportClosedError:
+            If the server socket is not open.
+        :raises TransportTimeoutError:
+            If accept times out before a client connects.
+        """
         if self._server_socket is None:
             raise TransportClosedError("TCP server receiver is not open.")
 

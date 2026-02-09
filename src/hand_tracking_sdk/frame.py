@@ -53,6 +53,8 @@ class HandFrame:
 
 @dataclass(slots=True)
 class _SideAssemblyState:
+    """Mutable per-side assembly state for incomplete and emitted components."""
+
     wrist: WristPose | None = None
     wrist_recv_ts_ns: int | None = None
     landmarks: HandLandmarks | None = None
@@ -184,6 +186,15 @@ class HandFrameAssembler:
         recv_ts_ns: int | None,
         recv_time_unix_ns: int | None,
     ) -> tuple[int, int | None]:
+        """Resolve receive timestamps for one pushed packet.
+
+        :param recv_ts_ns:
+            Optional monotonic timestamp from caller.
+        :param recv_time_unix_ns:
+            Optional Unix wall-clock timestamp from caller.
+        :returns:
+            ``(recv_ts_ns, recv_time_unix_ns)`` with defaults generated as configured.
+        """
         recv_ts_ns_value = monotonic_ns() if recv_ts_ns is None else recv_ts_ns
         if recv_time_unix_ns is not None:
             return recv_ts_ns_value, recv_time_unix_ns
@@ -199,6 +210,17 @@ class HandFrameAssembler:
         recv_time_unix_ns: int | None,
         source_ts_ns: int | None,
     ) -> HandFrame | None:
+        """Emit a frame for one hand side if component state has advanced.
+
+        :param side:
+            Target hand side for emission.
+        :param recv_time_unix_ns:
+            Wall-clock receive timestamp assigned to this push call.
+        :param source_ts_ns:
+            Optional source timestamp associated with this push call.
+        :returns:
+            Newly assembled frame when complete and updated, otherwise ``None``.
+        """
         side_state = self._state[side]
         if (
             side_state.wrist is None

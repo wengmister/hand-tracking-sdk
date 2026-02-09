@@ -48,6 +48,15 @@ def parse_line(line: str) -> ParsedPacket:
 
 
 def _parse_label(label: str) -> tuple[HandSide, PacketType]:
+    """Parse packet label into hand side and packet type.
+
+    :param label:
+        Label segment before ``:`` (for example ``"Right wrist"``).
+    :returns:
+        Parsed hand side and packet type tuple.
+    :raises ParseError:
+        If label format, side, or packet type is unsupported.
+    """
     parts = label.split()
     if len(parts) != 2:
         raise ParseError(f"Invalid label: {label!r}")
@@ -68,6 +77,15 @@ def _parse_label(label: str) -> tuple[HandSide, PacketType]:
 
 
 def _parse_floats(payload: str) -> list[float]:
+    """Parse comma-separated numeric payload into floats.
+
+    :param payload:
+        CSV payload segment after ``:``.
+    :returns:
+        Parsed float list with empty chunks removed.
+    :raises ParseError:
+        If any value cannot be parsed as ``float``.
+    """
     chunks = [chunk.strip() for chunk in payload.split(",") if chunk.strip()]
     try:
         return [float(value) for value in chunks]
@@ -76,6 +94,17 @@ def _parse_floats(payload: str) -> list[float]:
 
 
 def _parse_wrist(side: HandSide, values: list[float]) -> WristPacket:
+    """Validate and map wrist values into a typed packet.
+
+    :param side:
+        Hand side of the packet.
+    :param values:
+        Parsed float values expected to contain exactly 7 elements.
+    :returns:
+        Typed wrist packet.
+    :raises ParseError:
+        If value count does not match the wrist contract.
+    """
     if len(values) != WRIST_VALUE_COUNT:
         raise ParseError(f"Wrist packet must contain {WRIST_VALUE_COUNT} values, got {len(values)}")
 
@@ -84,6 +113,17 @@ def _parse_wrist(side: HandSide, values: list[float]) -> WristPacket:
 
 
 def _parse_landmarks(side: HandSide, values: list[float]) -> LandmarksPacket:
+    """Validate and map landmark values into a typed packet.
+
+    :param side:
+        Hand side of the packet.
+    :param values:
+        Parsed float values expected to contain exactly 63 elements.
+    :returns:
+        Typed landmark packet with 21 ``(x, y, z)`` points.
+    :raises ParseError:
+        If value count does not match the landmarks contract.
+    """
     if len(values) != LANDMARK_VALUE_COUNT:
         raise ParseError(
             f"Landmarks packet must contain {LANDMARK_VALUE_COUNT} values, got {len(values)}"
