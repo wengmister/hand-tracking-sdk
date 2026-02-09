@@ -34,6 +34,18 @@ Network timeout and disconnect behavior is reported through typed exceptions:
 - `TransportDisconnectedError`
 - `TransportClosedError`
 
+## Frame Assembly API
+
+Use `HandFrameAssembler` to combine wrist and landmark packets into coherent per-hand frames.
+
+- Emits a frame only after both components are present for a hand.
+- Ignores stale out-of-order updates (older receive timestamps).
+- Increments `sequence_id` per hand side on each newly emitted frame.
+- Supports:
+  - `recv_ts_ns` (monotonic receive time)
+  - `recv_time_unix_ns` (optional wall-clock receive time)
+  - `source_ts_ns` (optional upstream timestamp; currently caller-provided)
+
 ## Protocol Reference
 
 - `../hand-tracking-streamer/README.md`

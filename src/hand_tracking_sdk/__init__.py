@@ -9,6 +9,7 @@ from hand_tracking_sdk.exceptions import (
     TransportError,
     TransportTimeoutError,
 )
+from hand_tracking_sdk.frame import HandFrame, HandFrameAssembler
 from hand_tracking_sdk.models import (
     HandLandmarks,
     HandSide,
@@ -31,6 +32,8 @@ from hand_tracking_sdk.transport import (
 __all__ = [
     "HTSError",
     "HandLandmarks",
+    "HandFrame",
+    "HandFrameAssembler",
     "HandSide",
     "LandmarksPacket",
     "PacketType",
