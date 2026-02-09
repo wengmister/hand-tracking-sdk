@@ -46,6 +46,31 @@ Use `HandFrameAssembler` to combine wrist and landmark packets into coherent per
   - `recv_time_unix_ns` (optional wall-clock receive time)
   - `source_ts_ns` (optional upstream timestamp; currently caller-provided)
 
+## Coordinate Conversion API
+
+The SDK provides explicit Unity-left-handed to right-handed conversion helpers:
+- `unity_left_to_right_position`
+- `unity_left_to_right_quaternion`
+- `convert_wrist_pose_unity_left_to_right`
+- `convert_landmarks_unity_left_to_right`
+- `convert_hand_frame_unity_left_to_right`
+
+Current conversion profile:
+- position: flip Y sign (`x, y, z -> x, -y, z`)
+- orientation: basis transform equivalent to Y-axis reflection
+
+```python
+from hand_tracking_sdk import (
+    HandFrameAssembler,
+    convert_hand_frame_unity_left_to_right,
+)
+
+assembler = HandFrameAssembler()
+frame = assembler.push_line("Right wrist:, 0.1, 0.2, 0.3, 0.0, 0.0, 0.0, 1.0")
+if frame is not None:
+    converted = convert_hand_frame_unity_left_to_right(frame)
+```
+
 ## Protocol Reference
 
 - `../hand-tracking-streamer/README.md`

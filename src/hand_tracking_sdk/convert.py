@@ -113,6 +113,19 @@ def _quaternion_to_matrix(
     qz: float,
     qw: float,
 ) -> tuple[tuple[float, float, float], tuple[float, float, float], tuple[float, float, float]]:
+    """Convert quaternion components into a 3x3 rotation matrix.
+
+    :param qx:
+        Quaternion X.
+    :param qy:
+        Quaternion Y.
+    :param qz:
+        Quaternion Z.
+    :param qw:
+        Quaternion W.
+    :returns:
+        Rotation matrix corresponding to the input quaternion.
+    """
     xx = qx * qx
     yy = qy * qy
     zz = qz * qz
@@ -137,6 +150,13 @@ def _matrix_to_quaternion(
         tuple[float, float, float],
     ],
 ) -> tuple[float, float, float, float]:
+    """Convert a 3x3 rotation matrix into quaternion components.
+
+    :param matrix:
+        Rotation matrix.
+    :returns:
+        Normalized quaternion ``(qx, qy, qz, qw)``.
+    """
     m00, m01, m02 = matrix[0]
     m10, m11, m12 = matrix[1]
     m20, m21, m22 = matrix[2]
@@ -177,6 +197,19 @@ def _normalize_quaternion(
     qz: float,
     qw: float,
 ) -> tuple[float, float, float, float]:
+    """Normalize quaternion values and fall back to identity on zero norm.
+
+    :param qx:
+        Quaternion X.
+    :param qy:
+        Quaternion Y.
+    :param qz:
+        Quaternion Z.
+    :param qw:
+        Quaternion W.
+    :returns:
+        Normalized quaternion tuple.
+    """
     norm = (qx * qx + qy * qy + qz * qz + qw * qw) ** 0.5
     if norm == 0.0:
         return (0.0, 0.0, 0.0, 1.0)
@@ -187,6 +220,15 @@ def _matmul(
     a: tuple[tuple[float, float, float], tuple[float, float, float], tuple[float, float, float]],
     b: tuple[tuple[float, float, float], tuple[float, float, float], tuple[float, float, float]],
 ) -> tuple[tuple[float, float, float], tuple[float, float, float], tuple[float, float, float]]:
+    """Multiply two 3x3 matrices.
+
+    :param a:
+        Left-hand matrix operand.
+    :param b:
+        Right-hand matrix operand.
+    :returns:
+        Matrix product ``a * b``.
+    """
     return (
         (
             a[0][0] * b[0][0] + a[0][1] * b[1][0] + a[0][2] * b[2][0],
