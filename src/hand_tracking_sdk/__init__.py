@@ -1,6 +1,13 @@
 """Public API surface for the Hand Tracking SDK."""
 
 from hand_tracking_sdk.__about__ import __version__
+from hand_tracking_sdk.convert import (
+    convert_hand_frame_unity_left_to_right,
+    convert_landmarks_unity_left_to_right,
+    convert_wrist_pose_unity_left_to_right,
+    unity_left_to_right_position,
+    unity_left_to_right_quaternion,
+)
 from hand_tracking_sdk.exceptions import (
     HTSError,
     ParseError,
@@ -52,5 +59,10 @@ __all__ = [
     "WristPacket",
     "WristPose",
     "__version__",
+    "convert_hand_frame_unity_left_to_right",
+    "convert_landmarks_unity_left_to_right",
+    "convert_wrist_pose_unity_left_to_right",
     "parse_line",
+    "unity_left_to_right_position",
+    "unity_left_to_right_quaternion",
 ]
