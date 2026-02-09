@@ -11,16 +11,8 @@ This SDK provides typed parsing and validation for:
 
 Streamed joints are in Mediapipe-style 21 landmark points.
 
-## Example
-
-```python
-from hand_tracking_sdk import parse_line
-
-packet = parse_line("Right wrist:, 0.1, 0.2, 0.3, 0.0, 0.0, 0.0, 1.0")
-print(packet.side, packet.kind, packet.data)
-```
-
-The parser validates packet label, side, and value count, and raises `ParseError` on malformed input.
+>[!IMPORTANT]
+> Pre-release: This library is actively under development. Expect breaking changes to come.
 
 ## Transport API
 
@@ -89,9 +81,22 @@ for event in client.iter_events():
     print(event)
 ```
 
+## Example
+
+```python
+from hand_tracking_sdk import parse_line
+
+packet = parse_line("Right wrist:, 0.1, 0.2, 0.3, 0.0, 0.0, 0.0, 1.0")
+print(packet.side, packet.kind, packet.data)
+```
+
+The parser validates packet label, side, and value count, and raises `ParseError` on malformed input.
+
 ## Protocol Reference
 
-- `../hand-tracking-streamer/README.md`
-https://github.com/wengmister/hand-tracking-streamer/blob/main/README.md
-- `../hand-tracking-streamer/CONNECTIONS.md`
-https://github.com/wengmister/hand-tracking-streamer/blob/main/CONNECTIONS.md
+- [`hand-tracking-streamer/README.md`](https://github.com/wengmister/hand-tracking-streamer/blob/main/README.md)
+- [`hand-tracking-streamer/CONNECTIONS.md`](https://github.com/wengmister/hand-tracking-streamer/blob/main/CONNECTIONS.md)
+
+
+## License
+Apache-2.0
