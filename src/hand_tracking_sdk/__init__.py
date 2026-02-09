@@ -1,3 +1,5 @@
+"""Public API surface for the Hand Tracking SDK."""
+
 from hand_tracking_sdk.__about__ import __version__
 from hand_tracking_sdk.exceptions import HTSError, ParseError
 from hand_tracking_sdk.models import (

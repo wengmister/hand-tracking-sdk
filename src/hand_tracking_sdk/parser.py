@@ -1,3 +1,5 @@
+"""Parsing helpers for HTS UTF-8 CSV packets."""
+
 from hand_tracking_sdk.constants import LANDMARK_COUNT, LANDMARK_VALUE_COUNT, WRIST_VALUE_COUNT
 from hand_tracking_sdk.exceptions import ParseError
 from hand_tracking_sdk.models import (
@@ -12,13 +14,21 @@ from hand_tracking_sdk.models import (
 
 
 def parse_line(line: str) -> ParsedPacket:
-    """Parse one HTS UTF-8 CSV line into a typed packet.
+    """Parse one HTS CSV line into a typed packet object.
 
-    Expected labels:
-    - Left wrist:
-    - Right wrist:
-    - Left landmarks:
-    - Right landmarks:
+    The input line must use one of the supported labels:
+    ``Left wrist:``, ``Right wrist:``, ``Left landmarks:``, or
+    ``Right landmarks:``.
+
+    :param line:
+        Raw UTF-8 decoded line from HTS transport.
+    :returns:
+        A parsed packet instance for wrist or landmark data.
+    :rtype:
+        ParsedPacket
+    :raises ParseError:
+        If the line is empty, malformed, has unsupported labels, includes
+        non-float values, or does not match expected value counts.
     """
     stripped = line.strip()
     if not stripped:

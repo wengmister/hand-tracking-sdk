@@ -1,3 +1,5 @@
+"""Protocol constants for Hand Tracking Streamer packet parsing."""
+
 WRIST_VALUE_COUNT = 7
 LANDMARK_COUNT = 21
 LANDMARK_VALUE_COUNT = LANDMARK_COUNT * 3
