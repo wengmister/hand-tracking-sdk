@@ -11,7 +11,7 @@
    <img src="https://img.shields.io/badge/VR_app-Meta_Quest_Store-FF5757?labelColor=grey" alt="Horizon Store Release">
   </a>
 
-  <a href="https://github.c~om/wengmister/hand-tracking-streamer">
+  <a href="https://github.com/wengmister/hand-tracking-streamer">
     <img src="https://img.shields.io/badge/VR_app-GitHub-orange?labelColor=grey" alt="Python SDK">
   </a>
 
