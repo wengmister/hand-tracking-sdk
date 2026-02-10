@@ -63,6 +63,35 @@ if frame is not None:
     converted = convert_hand_frame_unity_left_to_right(frame)
 ```
 
+## Optional Visualization (Rerun)
+
+Install visualization extras:
+
+```bash
+pip install "hand-tracking-sdk[visualization]"
+```
+
+Basic usage:
+
+```python
+from hand_tracking_sdk import HTSClient, HTSClientConfig, RerunVisualizer, StreamOutput
+
+client = HTSClient(HTSClientConfig(output=StreamOutput.BOTH))
+visualizer = RerunVisualizer()
+
+for event in client.iter_events():
+    visualizer.log_event(event)
+```
+
+CLI example script:
+
+```bash
+uv run --with rerun-sdk python examples/visualize_rerun.py --transport tcp_server --host 0.0.0.0 --port 8000 --wrist-radius 0.03 --landmark-radius 0.02
+```
+
+By default, the visualizer converts Unity left-handed coordinates to right-handed view.
+Use `--no-right-handed-conversion` to disable this.
+
 ## Streaming Client API
 
 `HTSClient` provides a high-level sync stream with filtering and error policy controls.

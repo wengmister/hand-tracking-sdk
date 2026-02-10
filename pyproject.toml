@@ -28,6 +28,11 @@ dependencies = [
     "pyyaml>=6.0.3",
 ]
 
+[project.optional-dependencies]
+visualization = [
+  "rerun-sdk>=0.17.0"
+]
+
 [project.urls]
 Homepage = "https://github.com/wengmister/hand-tracking-streamer"
 Documentation = "https://github.com/wengmister/hand-tracking-streamer/blob/main/CONNECTIONS.md"

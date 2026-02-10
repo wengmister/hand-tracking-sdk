@@ -34,3 +34,11 @@ class ClientConfigurationError(ClientError):
 
 class ClientCallbackError(ClientError):
     """Raised when a user callback invoked by the client fails."""
+
+
+class VisualizationError(HTSError):
+    """Base exception for visualization-layer errors."""
+
+
+class VisualizationDependencyError(VisualizationError):
+    """Raised when an optional visualization dependency is not installed."""

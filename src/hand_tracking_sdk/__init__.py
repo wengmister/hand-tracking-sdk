@@ -30,6 +30,8 @@ from hand_tracking_sdk.exceptions import (
     TransportDisconnectedError,
     TransportError,
     TransportTimeoutError,
+    VisualizationDependencyError,
+    VisualizationError,
 )
 from hand_tracking_sdk.frame import HandFrame, HandFrameAssembler
 from hand_tracking_sdk.models import (
@@ -50,6 +52,7 @@ from hand_tracking_sdk.transport import (
     UDPLineReceiver,
     UDPReceiverConfig,
 )
+from hand_tracking_sdk.visualization import RerunVisualizer, RerunVisualizerConfig
 
 __all__ = [
     "ClientCallbackError",
@@ -84,6 +87,8 @@ __all__ = [
     "TransportMode",
     "UDPLineReceiver",
     "UDPReceiverConfig",
+    "VisualizationDependencyError",
+    "VisualizationError",
     "WristPacket",
     "WristPose",
     "__version__",
@@ -91,6 +96,8 @@ __all__ = [
     "convert_landmarks_unity_left_to_right",
     "convert_wrist_pose_unity_left_to_right",
     "parse_line",
+    "RerunVisualizer",
+    "RerunVisualizerConfig",
     "unity_left_to_right_position",
     "unity_left_to_right_quaternion",
 ]
