@@ -12,7 +12,7 @@ This SDK provides typed parsing and validation for:
 Streamed joints are in Mediapipe-style 21 landmark points.
 
 >[!IMPORTANT]
-> Pre-release: This library is actively under development. Expect breaking changes to come.
+> Pre-release: This library is under active development. Expect breaking changes to come.
 
 ## Transport API
 

@@ -1,7 +1,7 @@
 Hand Tracking SDK
 =================
 
-Production-oriented Python SDK for consuming telemetry from Hand Tracking Streamer (HTS).
+Python SDK for consuming telemetry from `Hand Tracking Streamer (HTS) <https://github.com/wengmister/hand-tracking-streamer>`_.
 
 Contents
 --------
