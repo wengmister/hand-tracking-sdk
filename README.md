@@ -1,6 +1,34 @@
-# Hand Tracking SDK
+<div align="center">
+  <img width="512" height="362" alt="sdk_logo" src="https://github.com/user-attachments/assets/33cbe2c6-2da9-4868-b5f0-c66e7abc6e3e" />
+  <h3 align="center">
+    Python SDK for consuming telemetry from
+    <a href="https://github.com/wengmister/hand-tracking-streamer">Hand Tracking Streamer (HTS)</a>
+  </h3>
+</div>
+<p align="center">
 
-Python SDK for consuming telemetry from [Hand Tracking Streamer (HTS)](https://github.com/wengmister/hand-tracking-streamer).
+  <a href="https://www.meta.com/experiences/hand-tracking-streamer/26303946202523164/">
+   <img src="https://img.shields.io/badge/VR_app-Meta_Quest_Store-FF5757?labelColor=grey" alt="Horizon Store Release">
+  </a>
+
+  <a href="https://github.c~om/wengmister/hand-tracking-streamer">
+    <img src="https://img.shields.io/badge/VR_app-GitHub-orange?labelColor=grey" alt="Python SDK">
+  </a>
+
+  <a href="https://github.com/wengmister/hand-tracking-streamer/blob/main/LICENSE">
+    <img src="https://img.shields.io/badge/license-Apache%20License%202.0-yellow.svg" alt="Apache 2.0">
+  </a>
+
+  <a href="https://hand-tracking-sdk.readthedocs.io/">
+    <img src="https://img.shields.io/badge/API-ReadTheDocs-green.svg" alt="API Documentation">
+  </a>
+
+
+</p>
+
+**Hand Tracking SDK** is a Python package for consuming HTS hand-tracking telemetry (UDP/TCP), parsing wrist/landmark data into typed frames, and providing conversion, visualization, and integration-ready APIs.
+
+This SDK is hosted on [PyPI](https://pypi.org/project/hand-tracking-sdk/), with API documentation [Here](https://hand-tracking-sdk.readthedocs.io/)
 
 ## Installation
 
