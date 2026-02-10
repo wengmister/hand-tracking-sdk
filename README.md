@@ -131,6 +131,15 @@ The parser validates packet label, side, and value count, and raises `ParseError
 - [`hand-tracking-streamer/README.md`](https://github.com/wengmister/hand-tracking-streamer/blob/main/README.md)
 - [`hand-tracking-streamer/CONNECTIONS.md`](https://github.com/wengmister/hand-tracking-streamer/blob/main/CONNECTIONS.md)
 
+## Documentation
+
+- Sphinx source lives in `docs/`
+- Read the Docs build config: `.readthedocs.yaml`
+- Local build command:
+
+```bash
+sphinx-build -b html docs docs/_build/html
+```
 
 ## License
 Apache-2.0
