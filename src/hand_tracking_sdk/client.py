@@ -63,7 +63,9 @@ class HTSClientConfig:
     :param port:
         Port used for bind/connect according to transport mode.
     :param timeout_s:
-        I/O timeout in seconds for receive operations.
+        I/O timeout in seconds for receive operations. In ``tcp_server`` mode,
+        initial connection wait uses ``max(timeout_s, 5.0)`` to avoid premature
+        startup timeouts while waiting for a device to connect.
     :param reconnect_delay_s:
         Delay used by TCP client reconnect loop.
     :param output:
@@ -190,7 +192,7 @@ class HTSClient:
                 TCPServerConfig(
                     host=self._config.host,
                     port=self._config.port,
-                    accept_timeout_s=self._config.timeout_s,
+                    accept_timeout_s=max(self._config.timeout_s, 5.0),
                     read_timeout_s=self._config.timeout_s,
                 )
             )

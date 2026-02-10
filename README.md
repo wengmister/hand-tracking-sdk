@@ -76,10 +76,13 @@ Key controls:
 ```python
 from hand_tracking_sdk import HTSClient, HTSClientConfig, StreamOutput
 
-client = HTSClient(HTSClientConfig(output=StreamOutput.FRAMES))
+client = HTSClient(HTSClientConfig(output=StreamOutput.BOTH))
 for event in client.iter_events():
     print(event)
 ```
+
+Note: `StreamOutput.FRAMES` emits only when both wrist *and* landmarks packets have been received for a hand side.
+Note: default `error_policy` is `strict`; use `tolerant` to skip malformed lines instead of stopping the stream.
 
 ## Example
 

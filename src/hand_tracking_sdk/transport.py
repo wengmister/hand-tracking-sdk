@@ -3,8 +3,10 @@
 from __future__ import annotations
 
 import socket
+from collections import deque
 from collections.abc import Iterator
 from dataclasses import dataclass
+from select import select
 from time import sleep
 from typing import cast
 
@@ -49,7 +51,7 @@ class TCPServerConfig:
     :param accept_timeout_s:
         Timeout for waiting on a new client connection.
     :param read_timeout_s:
-        Timeout while waiting for bytes from the connected client.
+        Timeout while waiting for bytes from connected clients.
     :param backlog:
         Listen backlog used in ``socket.listen``.
     :param max_line_bytes:
@@ -62,7 +64,7 @@ class TCPServerConfig:
     port: int = 8000
     accept_timeout_s: float = 1.0
     read_timeout_s: float = 1.0
-    backlog: int = 1
+    backlog: int = 5
     max_line_bytes: int = 262_144
     encoding: str = "utf-8"
 
@@ -107,6 +109,7 @@ class UDPLineReceiver:
         """
         self._config = config or UDPReceiverConfig()
         self._socket: socket.socket | None = None
+        self._pending_lines: deque[str] = deque()
 
     @property
     def local_address(self) -> tuple[str, int]:
@@ -138,6 +141,7 @@ class UDPLineReceiver:
         if self._socket is not None:
             self._socket.close()
             self._socket = None
+        self._pending_lines.clear()
 
     def __enter__(self) -> UDPLineReceiver:
         """Open receiver when entering context manager."""
@@ -149,26 +153,34 @@ class UDPLineReceiver:
         self.close()
 
     def recv_line(self) -> str:
-        """Receive one datagram and decode it as a line.
+        """Receive the next decoded non-empty line from UDP datagrams.
 
         :returns:
             Decoded line with surrounding whitespace removed.
         :raises TransportClosedError:
             If receiver socket is not open.
         :raises TransportTimeoutError:
-            If no datagram arrives before timeout.
+            If no new datagram arrives before timeout and no queued lines remain.
         """
         if self._socket is None:
             raise TransportClosedError("UDP receiver is not open.")
 
-        try:
-            payload, _ = self._socket.recvfrom(self._config.max_datagram_size)
-        except TimeoutError as exc:
-            raise TransportTimeoutError("Timed out waiting for UDP packet.") from exc
+        if self._pending_lines:
+            return self._pending_lines.popleft()
 
-        text = payload.decode(self._config.encoding, errors="strict")
-        line = text.splitlines()[0] if text else ""
-        return line.strip()
+        while True:
+            try:
+                payload, _ = self._socket.recvfrom(self._config.max_datagram_size)
+            except TimeoutError as exc:
+                raise TransportTimeoutError("Timed out waiting for UDP packet.") from exc
+
+            text = payload.decode(self._config.encoding, errors="strict")
+            lines = [line.strip() for line in text.splitlines() if line.strip()]
+            if not lines:
+                continue
+
+            self._pending_lines.extend(lines[1:])
+            return lines[0]
 
     def iter_lines(self) -> Iterator[str]:
         """Yield lines until receiver is closed.
@@ -186,7 +198,7 @@ class UDPLineReceiver:
 
 
 class TCPServerLineReceiver:
-    """Receive UTF-8 HTS lines from inbound TCP client connections."""
+    """Receive UTF-8 HTS lines from one or more inbound TCP client connections."""
 
     def __init__(self, config: TCPServerConfig | None = None) -> None:
         """Create a TCP server receiver.
@@ -196,8 +208,9 @@ class TCPServerLineReceiver:
         """
         self._config = config or TCPServerConfig()
         self._server_socket: socket.socket | None = None
-        self._client_socket: socket.socket | None = None
-        self._buffer = bytearray()
+        self._client_sockets: set[socket.socket] = set()
+        self._client_buffers: dict[socket.socket, bytearray] = {}
+        self._pending_lines: deque[str] = deque()
 
     @property
     def local_address(self) -> tuple[str, int]:
@@ -220,22 +233,22 @@ class TCPServerLineReceiver:
             raise RuntimeError("TCP server receiver is already open.")
 
         server_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        server_socket.settimeout(self._config.accept_timeout_s)
+        server_socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
         server_socket.bind((self._config.host, self._config.port))
         server_socket.listen(self._config.backlog)
+        server_socket.setblocking(False)
         self._server_socket = server_socket
 
     def close(self) -> None:
         """Close connected client and server sockets."""
-        if self._client_socket is not None:
-            self._client_socket.close()
-            self._client_socket = None
+        for client_socket in list(self._client_sockets):
+            self._close_client_socket(client_socket)
 
         if self._server_socket is not None:
             self._server_socket.close()
             self._server_socket = None
 
-        self._buffer.clear()
+        self._pending_lines.clear()
 
     def __enter__(self) -> TCPServerLineReceiver:
         """Open receiver when entering context manager."""
@@ -246,32 +259,74 @@ class TCPServerLineReceiver:
         """Close receiver when leaving context manager."""
         self.close()
 
-    def _ensure_client(self) -> None:
-        """Ensure one TCP client connection is available for reads.
+    def _accept_ready_clients(self) -> None:
+        """Accept all currently pending inbound TCP client connections.
 
         :raises TransportClosedError:
             If the server socket is not open.
-        :raises TransportTimeoutError:
-            If accept times out before a client connects.
         """
         if self._server_socket is None:
             raise TransportClosedError("TCP server receiver is not open.")
 
-        if self._client_socket is not None:
-            return
+        while True:
+            try:
+                client_socket, _ = self._server_socket.accept()
+            except BlockingIOError:
+                break
+            client_socket.setblocking(False)
+            self._client_sockets.add(client_socket)
+            self._client_buffers[client_socket] = bytearray()
+
+    def _close_client_socket(self, client_socket: socket.socket) -> None:
+        """Close one connected TCP client and clear its buffer."""
+        try:
+            client_socket.close()
+        finally:
+            self._client_sockets.discard(client_socket)
+            self._client_buffers.pop(client_socket, None)
+
+    def _drain_ready_client(self, client_socket: socket.socket) -> bool:
+        """Read bytes from one ready client and enqueue complete text lines.
+
+        :returns:
+            ``True`` if the client disconnected or was dropped, ``False`` otherwise.
+        """
+        buffer = self._client_buffers.get(client_socket)
+        if buffer is None:
+            return True
 
         try:
-            client_socket, _ = self._server_socket.accept()
-        except TimeoutError as exc:
-            raise TransportTimeoutError("Timed out waiting for TCP client connection.") from exc
+            chunk = client_socket.recv(4096)
+        except BlockingIOError:
+            return False
+        except OSError:
+            self._close_client_socket(client_socket)
+            return True
 
-        client_socket.settimeout(self._config.read_timeout_s)
-        self._client_socket = client_socket
+        if not chunk:
+            self._close_client_socket(client_socket)
+            return True
+
+        buffer.extend(chunk)
+        if len(buffer) >= self._config.max_line_bytes:
+            self._close_client_socket(client_socket)
+            return True
+
+        while True:
+            newline_index = buffer.find(b"\n")
+            if newline_index < 0:
+                break
+            raw = bytes(buffer[:newline_index])
+            del buffer[: newline_index + 1]
+            self._pending_lines.append(raw.decode(self._config.encoding, errors="strict").strip())
+
+        return False
 
     def recv_line(self) -> str:
-        """Receive one newline-terminated line from the connected client.
+        """Receive one newline-terminated line from any connected client.
 
-        If no client is connected, this method first waits for a connection.
+        If no client is connected, this method waits for at least one inbound
+        connection before reading lines.
 
         :returns:
             Decoded line with trailing newline removed.
@@ -280,36 +335,45 @@ class TCPServerLineReceiver:
         :raises TransportTimeoutError:
             If waiting for connection or data times out.
         :raises TransportDisconnectedError:
-            If the client disconnects before a full line is received.
+            If all connected clients disconnect before a new line is received.
         """
-        self._ensure_client()
+        if self._server_socket is None:
+            raise TransportClosedError("TCP server receiver is not open.")
+
+        if self._pending_lines:
+            return self._pending_lines.popleft()
 
         while True:
-            newline_index = self._buffer.find(b"\n")
-            if newline_index >= 0:
-                raw = bytes(self._buffer[:newline_index])
-                del self._buffer[: newline_index + 1]
-                return raw.decode(self._config.encoding, errors="strict").strip()
+            wait_for_connection = not self._client_sockets
+            timeout_s = (
+                self._config.accept_timeout_s
+                if wait_for_connection
+                else self._config.read_timeout_s
+            )
+            ready_sockets, _, _ = select(
+                [self._server_socket, *self._client_sockets],
+                [],
+                [],
+                timeout_s,
+            )
+            if not ready_sockets:
+                if wait_for_connection:
+                    raise TransportTimeoutError("Timed out waiting for TCP client connection.")
+                raise TransportTimeoutError("Timed out waiting for TCP data.")
 
-            if len(self._buffer) >= self._config.max_line_bytes:
-                self._buffer.clear()
-                raise TransportDisconnectedError("Buffered TCP line exceeded max size.")
+            disconnected = False
+            if self._server_socket in ready_sockets:
+                self._accept_ready_clients()
 
-            if self._client_socket is None:
+            for client_socket in list(self._client_sockets):
+                if client_socket in ready_sockets:
+                    disconnected = self._drain_ready_client(client_socket) or disconnected
+
+            if self._pending_lines:
+                return self._pending_lines.popleft()
+
+            if disconnected and not self._client_sockets:
                 raise TransportDisconnectedError("TCP client disconnected.")
-
-            try:
-                chunk = self._client_socket.recv(4096)
-            except TimeoutError as exc:
-                raise TransportTimeoutError("Timed out waiting for TCP data.") from exc
-
-            if not chunk:
-                self._client_socket.close()
-                self._client_socket = None
-                self._buffer.clear()
-                raise TransportDisconnectedError("TCP client disconnected.")
-
-            self._buffer.extend(chunk)
 
     def iter_lines(self) -> Iterator[str]:
         """Yield lines continuously, recovering from disconnects.

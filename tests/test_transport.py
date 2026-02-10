@@ -40,6 +40,27 @@ def test_udp_receiver_reads_line() -> None:
     assert line == "Right wrist:, 0, 0, 0, 0, 0, 0, 1"
 
 
+def test_udp_receiver_reads_multiple_lines_from_single_datagram() -> None:
+    receiver = UDPLineReceiver(UDPReceiverConfig(host="127.0.0.1", port=0, timeout_s=0.2))
+    with receiver:
+        _, port = receiver.local_address
+
+        sender = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        sender.sendto(
+            b"Right wrist:, 0, 0, 0, 0, 0, 0, 1\nRight landmarks:, "
+            + b", ".join(b"0" for _ in range(63))
+            + b"\n",
+            ("127.0.0.1", port),
+        )
+        sender.close()
+
+        line_one = receiver.recv_line()
+        line_two = receiver.recv_line()
+
+    assert line_one == "Right wrist:, 0, 0, 0, 0, 0, 0, 1"
+    assert line_two == "Right landmarks:, " + ", ".join("0" for _ in range(63))
+
+
 def test_udp_receiver_timeout() -> None:
     receiver = UDPLineReceiver(UDPReceiverConfig(host="127.0.0.1", port=0, timeout_s=0.05))
     with receiver:
@@ -72,6 +93,51 @@ def test_tcp_server_receiver_reads_and_recovers_disconnect() -> None:
         sender_two.close()
 
         assert receiver.recv_line() == "line-3"
+
+
+def test_tcp_server_receiver_reads_from_second_client_while_first_is_idle() -> None:
+    receiver = TCPServerLineReceiver(
+        TCPServerConfig(host="127.0.0.1", port=0, accept_timeout_s=0.2, read_timeout_s=0.2)
+    )
+
+    with receiver:
+        _, port = receiver.local_address
+
+        idle_sender = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        idle_sender.connect(("127.0.0.1", port))
+
+        active_sender = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        active_sender.connect(("127.0.0.1", port))
+        active_sender.sendall(b"line-from-second-client\n")
+
+        assert receiver.recv_line() == "line-from-second-client"
+
+        idle_sender.close()
+        active_sender.close()
+
+
+def test_tcp_server_receiver_reads_from_multiple_clients() -> None:
+    receiver = TCPServerLineReceiver(
+        TCPServerConfig(host="127.0.0.1", port=0, accept_timeout_s=0.2, read_timeout_s=0.2)
+    )
+
+    with receiver:
+        _, port = receiver.local_address
+
+        sender_one = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        sender_one.connect(("127.0.0.1", port))
+        sender_one.sendall(b"first\n")
+
+        sender_two = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        sender_two.connect(("127.0.0.1", port))
+        sender_two.sendall(b"second\n")
+
+        observed = {receiver.recv_line(), receiver.recv_line()}
+
+        sender_one.close()
+        sender_two.close()
+
+    assert observed == {"first", "second"}
 
 
 def test_tcp_client_receiver_reads_line() -> None:
