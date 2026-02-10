@@ -2,11 +2,14 @@
 
 from hand_tracking_sdk.__about__ import __version__
 from hand_tracking_sdk.client import (
+    ClientStats,
     ErrorPolicy,
     HandFilter,
     HTSClient,
     HTSClientConfig,
+    LogEventKind,
     StreamEvent,
+    StreamLogEvent,
     StreamOutput,
     TransportMode,
 )
@@ -18,6 +21,9 @@ from hand_tracking_sdk.convert import (
     unity_left_to_right_quaternion,
 )
 from hand_tracking_sdk.exceptions import (
+    ClientCallbackError,
+    ClientConfigurationError,
+    ClientError,
     HTSError,
     ParseError,
     TransportClosedError,
@@ -46,6 +52,10 @@ from hand_tracking_sdk.transport import (
 )
 
 __all__ = [
+    "ClientCallbackError",
+    "ClientConfigurationError",
+    "ClientError",
+    "ClientStats",
     "ErrorPolicy",
     "HTSError",
     "HTSClient",
@@ -56,10 +66,12 @@ __all__ = [
     "HandFrameAssembler",
     "HandSide",
     "LandmarksPacket",
+    "LogEventKind",
     "PacketType",
     "ParseError",
     "ParsedPacket",
     "StreamEvent",
+    "StreamLogEvent",
     "StreamOutput",
     "TCPClientConfig",
     "TCPClientLineReceiver",

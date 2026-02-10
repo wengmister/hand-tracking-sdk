@@ -22,3 +22,15 @@ class TransportTimeoutError(TransportError):
 
 class TransportDisconnectedError(TransportError):
     """Raised when a connected TCP peer disconnects."""
+
+
+class ClientError(HTSError):
+    """Base exception for high-level client errors."""
+
+
+class ClientConfigurationError(ClientError):
+    """Raised when high-level client configuration is invalid."""
+
+
+class ClientCallbackError(ClientError):
+    """Raised when a user callback invoked by the client fails."""

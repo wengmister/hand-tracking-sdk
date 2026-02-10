@@ -84,6 +84,20 @@ for event in client.iter_events():
 Note: `StreamOutput.FRAMES` emits only when both wrist *and* landmarks packets have been received for a hand side.
 Note: default `error_policy` is `strict`; use `tolerant` to skip malformed lines instead of stopping the stream.
 
+## Observability and Error Model
+
+`HTSClient` exposes structured counters and optional log hooks:
+- `get_stats()` / `reset_stats()`
+- `ClientStats` counters:
+  - `lines_received`, `parse_errors`, `dropped_lines`
+  - `packets_filtered`, `packets_emitted`, `frames_emitted`
+  - `callbacks_invoked`, `callback_errors`
+- `log_hook` in `HTSClientConfig` receives `StreamLogEvent` values (`LogEventKind`)
+
+Additional high-level client exceptions:
+- `ClientConfigurationError`
+- `ClientCallbackError`
+
 ## Example
 
 ```python
