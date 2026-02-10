@@ -1,7 +1,8 @@
 """Stream HTS events and persist them as JSON Lines.
 
 Example:
-    uv run python examples/log_to_jsonl.py --transport tcp_server --host 0.0.0.0 --port 8000 --output both --path runs/hts.jsonl
+    uv run python examples/log_to_jsonl.py --transport tcp_server \\
+        --host 0.0.0.0 --port 8000 --output both --path runs/hts.jsonl
 """
 
 from __future__ import annotations
@@ -13,9 +14,9 @@ from time import time_ns
 from typing import Any
 
 from hand_tracking_sdk import (
+    HandFrame,
     HTSClient,
     HTSClientConfig,
-    HandFrame,
     LandmarksPacket,
     StreamOutput,
     TransportMode,
