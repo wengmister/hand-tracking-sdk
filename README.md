@@ -94,6 +94,12 @@ Landmarks are treated as wrist-relative and rendered in the corresponding wrist 
 Landmark colors are per hand by default: left=blue, right=red.
 The 3D view uses a dark background and FLU frame (`x=forward, y=left, z=up`).
 
+Other example scripts:
+- frame-only stream summary:
+  `uv run python examples/stream_frames.py --transport tcp_server --host 0.0.0.0 --port 8000`
+- JSONL capture for replay/analysis:
+  `uv run python examples/log_to_jsonl.py --transport tcp_server --host 0.0.0.0 --port 8000 --output both --path runs/hand_tracking.jsonl`
+
 ## Streaming Client API
 
 `HTSClient` provides a high-level sync stream with filtering and error policy controls.
