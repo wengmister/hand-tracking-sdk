@@ -8,8 +8,10 @@ from time import monotonic_ns, time_ns
 from typing import Any
 
 from hand_tracking_sdk.models import (
+    FingerName,
     HandLandmarks,
     HandSide,
+    JointName,
     LandmarksPacket,
     ParsedPacket,
     WristPacket,
@@ -54,6 +56,31 @@ class HandFrame:
     source_ts_ns: int | None
     wrist_recv_ts_ns: int
     landmarks_recv_ts_ns: int
+
+    def get_joint(self, joint: JointName | str) -> tuple[float, float, float]:
+        """Return one landmark point by joint name.
+
+        :param joint:
+            Joint to query, either as :class:`JointName` or canonical joint string.
+        :returns:
+            Joint ``(x, y, z)`` tuple.
+        :raises ValueError:
+            If the joint name is unknown.
+        """
+        return self.landmarks.get_joint(joint)
+
+    def get_finger(self, finger: FingerName | str) -> dict[JointName, tuple[float, float, float]]:
+        """Return all landmark points for one finger group.
+
+        :param finger:
+            Finger group to query.
+        :returns:
+            Dictionary mapping :class:`JointName` to ``(x, y, z)`` points for
+            the selected finger group.
+        :raises ValueError:
+            If the finger group is unknown.
+        """
+        return self.landmarks.get_finger(finger)
 
     def to_dict(self) -> dict[str, Any]:
         """Serialize frame into a deterministic mapping-friendly dictionary.

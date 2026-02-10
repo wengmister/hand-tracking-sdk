@@ -35,8 +35,10 @@ from hand_tracking_sdk.exceptions import (
 )
 from hand_tracking_sdk.frame import HandFrame, HandFrameAssembler
 from hand_tracking_sdk.models import (
+    FingerName,
     HandLandmarks,
     HandSide,
+    JointName,
     LandmarksPacket,
     PacketType,
     ParsedPacket,
@@ -64,6 +66,7 @@ __all__ = [
     "ClientError",
     "ClientStats",
     "ErrorPolicy",
+    "FingerName",
     "HTSError",
     "HTSClient",
     "HTSClientConfig",
@@ -75,6 +78,7 @@ __all__ = [
     "LandmarksPacket",
     "LogEventKind",
     "PacketType",
+    "JointName",
     "ParseError",
     "ParsedPacket",
     "StreamEvent",
