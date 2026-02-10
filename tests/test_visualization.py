@@ -141,7 +141,6 @@ def test_landmarks_are_transformed_by_wrist_pose(monkeypatch: pytest.MonkeyPatch
         RerunVisualizerConfig(
             application_id="hts-test",
             spawn=False,
-            landmarks_are_wrist_relative=True,
         )
     )
 
@@ -163,7 +162,7 @@ def test_landmarks_are_transformed_by_wrist_pose(monkeypatch: pytest.MonkeyPatch
         payload for path, payload in fake.logs if path == "hands/left/landmarks"
     )
     assert isinstance(landmarks_payload, _FakeRerun.Points3D)
-    assert landmarks_payload.points == [[33.0, -11.0, 22.0]]
+    assert landmarks_payload.points == [[11.0, 33.0, 22.0]]
     assert landmarks_payload.radii == [0.015]
     assert landmarks_payload.colors == [[64, 128, 255]]
 
@@ -202,3 +201,10 @@ def test_right_landmarks_use_red_color(monkeypatch: pytest.MonkeyPatch) -> None:
     )
     assert isinstance(landmarks_payload, _FakeRerun.Points3D)
     assert landmarks_payload.colors == [[255, 64, 64]]
+
+def test_default_visualizer_config_values() -> None:
+    config = RerunVisualizerConfig()
+
+    assert config.application_id == "hand-tracking-sdk"
+    assert config.spawn is True
+    assert config.landmarks_are_wrist_relative is True

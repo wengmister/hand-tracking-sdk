@@ -86,15 +86,13 @@ for event in client.iter_events():
 CLI example script:
 
 ```bash
-uv run --with rerun-sdk python examples/visualize_rerun.py --transport tcp_server --host 0.0.0.0 --port 8000 --wrist-radius 0.03 --landmark-radius 0.02
+uv run --with rerun-sdk python examples/visualize_rerun.py --transport tcp_server --host 0.0.0.0 --port 8000
 ```
 
 By default, the visualizer converts Unity left-handed coordinates to right-handed view.
-Use `--no-right-handed-conversion` to disable this.
+Landmarks are treated as wrist-relative and rendered in the corresponding wrist frame.
 Landmark colors are per hand by default: left=blue, right=red.
-You can set the 3D view background using `--background-color R,G,B` (or `none`).
-Visualization defaults to FLU frame (`x=forward, y=left, z=up`); override with
-`--visualization-frame sdk` if needed.
+The 3D view uses a dark background and FLU frame (`x=forward, y=left, z=up`).
 
 ## Streaming Client API
 

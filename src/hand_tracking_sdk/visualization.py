@@ -173,6 +173,17 @@ class RerunVisualizer:
         radius: float,
         color: tuple[int, int, int],
     ) -> None:
+        """Log a homogeneous point set to Rerun.
+
+        :param path:
+            Entity path for the emitted points.
+        :param points:
+            Sequence of points in SDK frame convention prior to frame mapping.
+        :param radius:
+            Radius in meters for each point marker.
+        :param color:
+            RGB tuple used for all emitted points.
+        """
         mapped_points = [self._map_point_frame(x=x, y=y, z=z) for x, y, z in points]
         points_as_lists = [[x, y, z] for x, y, z in mapped_points]
         self._rr.log(
@@ -185,6 +196,13 @@ class RerunVisualizer:
         )
 
     def _import_rerun(self) -> ModuleType:
+        """Import the optional ``rerun`` dependency.
+
+        :raises VisualizationDependencyError:
+            If ``rerun-sdk`` is not installed.
+        :returns:
+            Imported ``rerun`` module.
+        """
         try:
             module = importlib.import_module("rerun")
         except ModuleNotFoundError as exc:
@@ -217,11 +235,29 @@ class RerunVisualizer:
         self._rr.send_blueprint(blueprint)
 
     def _landmark_color(self, side: HandSide) -> tuple[int, int, int]:
+        """Return the configured landmark color for a hand side.
+
+        :param side:
+            Hand side associated with the packet or frame.
+        :returns:
+            RGB color tuple for landmark points.
+        """
         if side == HandSide.LEFT:
             return self._config.left_landmark_color
         return self._config.right_landmark_color
 
     def _map_point_frame(self, *, x: float, y: float, z: float) -> tuple[float, float, float]:
+        """Map a point from SDK coordinates to the visualization frame.
+
+        :param x:
+            Point X value in SDK frame.
+        :param y:
+            Point Y value in SDK frame.
+        :param z:
+            Point Z value in SDK frame.
+        :returns:
+            Point in the configured visualization frame.
+        """
         if self._config.visualization_frame == VisualizationFrame.SDK:
             return (x, y, z)
 
@@ -234,6 +270,15 @@ class RerunVisualizer:
         points: tuple[tuple[float, float, float], ...],
         wrist: WristPose,
     ) -> tuple[tuple[float, float, float], ...]:
+        """Transform wrist-relative landmarks into world coordinates.
+
+        :param points:
+            Landmark points interpreted as coordinates in wrist-local space.
+        :param wrist:
+            Wrist world pose used to rotate and translate each point.
+        :returns:
+            Landmark points in world coordinates.
+        """
         transformed: list[tuple[float, float, float]] = []
         for px, py, pz in points:
             rx, ry, rz = _rotate_vector_by_quaternion(
@@ -259,6 +304,25 @@ def _rotate_vector_by_quaternion(
     qz: float,
     qw: float,
 ) -> tuple[float, float, float]:
+    """Rotate a 3D vector by a quaternion.
+
+    :param x:
+        Input vector X component.
+    :param y:
+        Input vector Y component.
+    :param z:
+        Input vector Z component.
+    :param qx:
+        Quaternion X component.
+    :param qy:
+        Quaternion Y component.
+    :param qz:
+        Quaternion Z component.
+    :param qw:
+        Quaternion W component.
+    :returns:
+        Rotated ``(x, y, z)`` tuple.
+    """
     norm = (qx * qx + qy * qy + qz * qz + qw * qw) ** 0.5
     if norm == 0.0:
         return x, y, z
