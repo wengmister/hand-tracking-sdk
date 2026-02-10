@@ -91,6 +91,10 @@ uv run --with rerun-sdk python examples/visualize_rerun.py --transport tcp_serve
 
 By default, the visualizer converts Unity left-handed coordinates to right-handed view.
 Use `--no-right-handed-conversion` to disable this.
+Landmark colors are per hand by default: left=blue, right=red.
+You can set the 3D view background using `--background-color R,G,B` (or `none`).
+Visualization defaults to FLU frame (`x=forward, y=left, z=up`); override with
+`--visualization-frame sdk` if needed.
 
 ## Streaming Client API
 

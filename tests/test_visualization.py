@@ -23,12 +23,16 @@ class _FakeRerun(ModuleType):
         super().__init__("rerun")
         self.inits: list[tuple[str, bool]] = []
         self.logs: list[tuple[str, object]] = []
+        self.blueprints: list[object] = []
 
     def init(self, application_id: str, *, spawn: bool) -> None:
         self.inits.append((application_id, spawn))
 
     def log(self, path: str, payload: object) -> None:
         self.logs.append((path, payload))
+
+    def send_blueprint(self, blueprint: object) -> None:
+        self.blueprints.append(blueprint)
 
     class Points3D:
         def __init__(
@@ -43,6 +47,24 @@ class _FakeRerun(ModuleType):
             self.colors = colors
 
 
+class _FakeBlueprint(ModuleType):
+    class Spatial3DView:
+        def __init__(
+            self,
+            *,
+            origin: str,
+            name: str,
+            background: list[int],
+        ) -> None:
+            self.origin = origin
+            self.name = name
+            self.background = background
+
+    class Blueprint:
+        def __init__(self, view: object) -> None:
+            self.view = view
+
+
 def test_rerun_visualizer_requires_optional_dependency(monkeypatch: pytest.MonkeyPatch) -> None:
     def _raise_module_not_found(_: str) -> ModuleType:
         raise ModuleNotFoundError("rerun")
@@ -55,9 +77,14 @@ def test_rerun_visualizer_requires_optional_dependency(monkeypatch: pytest.Monke
 
 def test_rerun_visualizer_logs_packet_and_frame(monkeypatch: pytest.MonkeyPatch) -> None:
     fake = _FakeRerun()
+    fake_blueprint = _FakeBlueprint("rerun.blueprint")
 
-    def _import(_: str) -> ModuleType:
-        return fake
+    def _import(module_name: str) -> ModuleType:
+        if module_name == "rerun":
+            return fake
+        if module_name == "rerun.blueprint":
+            return fake_blueprint
+        raise ModuleNotFoundError(module_name)
 
     monkeypatch.setattr("importlib.import_module", _import)
 
@@ -99,9 +126,14 @@ def test_rerun_visualizer_logs_packet_and_frame(monkeypatch: pytest.MonkeyPatch)
 
 def test_landmarks_are_transformed_by_wrist_pose(monkeypatch: pytest.MonkeyPatch) -> None:
     fake = _FakeRerun()
+    fake_blueprint = _FakeBlueprint("rerun.blueprint")
 
-    def _import(_: str) -> ModuleType:
-        return fake
+    def _import(module_name: str) -> ModuleType:
+        if module_name == "rerun":
+            return fake
+        if module_name == "rerun.blueprint":
+            return fake_blueprint
+        raise ModuleNotFoundError(module_name)
 
     monkeypatch.setattr("importlib.import_module", _import)
 
@@ -131,5 +163,42 @@ def test_landmarks_are_transformed_by_wrist_pose(monkeypatch: pytest.MonkeyPatch
         payload for path, payload in fake.logs if path == "hands/left/landmarks"
     )
     assert isinstance(landmarks_payload, _FakeRerun.Points3D)
-    assert landmarks_payload.points == [[11.0, -22.0, 33.0]]
+    assert landmarks_payload.points == [[33.0, -11.0, 22.0]]
     assert landmarks_payload.radii == [0.015]
+    assert landmarks_payload.colors == [[64, 128, 255]]
+
+
+def test_right_landmarks_use_red_color(monkeypatch: pytest.MonkeyPatch) -> None:
+    fake = _FakeRerun()
+    fake_blueprint = _FakeBlueprint("rerun.blueprint")
+
+    def _import(module_name: str) -> ModuleType:
+        if module_name == "rerun":
+            return fake
+        if module_name == "rerun.blueprint":
+            return fake_blueprint
+        raise ModuleNotFoundError(module_name)
+
+    monkeypatch.setattr("importlib.import_module", _import)
+
+    visualizer = RerunVisualizer(RerunVisualizerConfig(application_id="hts-test", spawn=False))
+    visualizer.log_packet(
+        WristPacket(
+            side=HandSide.RIGHT,
+            kind=PacketType.WRIST,
+            data=WristPose(x=0.0, y=0.0, z=0.0, qx=0.0, qy=0.0, qz=0.0, qw=1.0),
+        )
+    )
+    visualizer.log_packet(
+        LandmarksPacket(
+            side=HandSide.RIGHT,
+            kind=PacketType.LANDMARKS,
+            data=HandLandmarks(points=((0.0, 0.0, 0.0),)),
+        )
+    )
+
+    landmarks_payload = next(
+        payload for path, payload in fake.logs if path == "hands/right/landmarks"
+    )
+    assert isinstance(landmarks_payload, _FakeRerun.Points3D)
+    assert landmarks_payload.colors == [[255, 64, 64]]

@@ -52,7 +52,11 @@ from hand_tracking_sdk.transport import (
     UDPLineReceiver,
     UDPReceiverConfig,
 )
-from hand_tracking_sdk.visualization import RerunVisualizer, RerunVisualizerConfig
+from hand_tracking_sdk.visualization import (
+    RerunVisualizer,
+    RerunVisualizerConfig,
+    VisualizationFrame,
+)
 
 __all__ = [
     "ClientCallbackError",
@@ -89,6 +93,7 @@ __all__ = [
     "UDPReceiverConfig",
     "VisualizationDependencyError",
     "VisualizationError",
+    "VisualizationFrame",
     "WristPacket",
     "WristPose",
     "__version__",

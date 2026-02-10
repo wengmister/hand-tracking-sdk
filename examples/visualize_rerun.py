@@ -19,6 +19,7 @@ from hand_tracking_sdk import (
     RerunVisualizerConfig,
     StreamOutput,
     TransportMode,
+    VisualizationFrame,
 )
 
 
@@ -84,11 +85,26 @@ def _parse_args() -> argparse.Namespace:
         action="store_true",
         help="Disable Unity->right-handed conversion before visualization.",
     )
+    parser.add_argument(
+        "--background-color",
+        default="18,22,30",
+        help=(
+            "Rerun 3D background RGB as comma-separated values "
+            "(e.g. 18,22,30). Use 'none' to disable."
+        ),
+    )
+    parser.add_argument(
+        "--visualization-frame",
+        choices=[value.value for value in VisualizationFrame],
+        default=VisualizationFrame.FLU.value,
+        help="Output frame convention for visualization points.",
+    )
     return parser.parse_args()
 
 
 def _main() -> int:
     args = _parse_args()
+    background_color = _parse_rgb_or_none(args.background_color)
 
     client = HTSClient(
         HTSClientConfig(
@@ -109,6 +125,8 @@ def _main() -> int:
             wrist_radius=args.wrist_radius,
             landmark_radius=args.landmark_radius,
             convert_to_right_handed=not args.no_right_handed_conversion,
+            background_color=background_color,
+            visualization_frame=VisualizationFrame(args.visualization_frame),
         )
     )
 
@@ -121,6 +139,21 @@ def _main() -> int:
 def _stream_events(events: Iterable[object]) -> Iterable[object]:
     """Yield events unchanged so script remains easy to extend for preprocessing."""
     yield from events
+
+
+def _parse_rgb_or_none(value: str) -> tuple[int, int, int] | None:
+    if value.lower() == "none":
+        return None
+
+    chunks = [chunk.strip() for chunk in value.split(",")]
+    if len(chunks) != 3:
+        msg = "--background-color expects 3 comma-separated integers or 'none'."
+        raise ValueError(msg)
+
+    rgb = tuple(int(chunk) for chunk in chunks)
+    if any(channel < 0 or channel > 255 for channel in rgb):
+        raise ValueError("--background-color values must be in range [0, 255].")
+    return rgb
 
 
 if __name__ == "__main__":

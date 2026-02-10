@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import importlib
 from dataclasses import dataclass
+from enum import StrEnum
 from types import ModuleType
 from typing import cast
 
@@ -16,6 +17,13 @@ from hand_tracking_sdk.frame import HandFrame
 from hand_tracking_sdk.models import HandSide, LandmarksPacket, ParsedPacket, WristPacket, WristPose
 
 from .exceptions import VisualizationDependencyError
+
+
+class VisualizationFrame(StrEnum):
+    """Output frame convention used for visualization points."""
+
+    SDK = "sdk"
+    FLU = "flu"
 
 
 @dataclass(frozen=True, slots=True)
@@ -35,11 +43,18 @@ class RerunVisualizerConfig:
         Point radius for landmark markers in meters.
     :param wrist_color:
         RGB color for wrist markers.
-    :param landmark_color:
-        RGB color for landmark markers.
+    :param left_landmark_color:
+        RGB color for left-hand landmark markers.
+    :param right_landmark_color:
+        RGB color for right-hand landmark markers.
     :param convert_to_right_handed:
         If ``True``, incoming Unity left-handed data are converted to right-handed
         coordinates before visualization.
+    :param background_color:
+        Optional RGB background color for the Rerun 3D view.
+    :param visualization_frame:
+        Point frame convention for visualization output.
+        ``flu`` means ``x=forward, y=left, z=up``.
     """
 
     application_id: str = "hand-tracking-sdk"
@@ -48,8 +63,11 @@ class RerunVisualizerConfig:
     wrist_radius: float = 0.025
     landmark_radius: float = 0.015
     wrist_color: tuple[int, int, int] = (255, 220, 0)
-    landmark_color: tuple[int, int, int] = (0, 255, 255)
+    left_landmark_color: tuple[int, int, int] = (64, 128, 255)
+    right_landmark_color: tuple[int, int, int] = (255, 64, 64)
     convert_to_right_handed: bool = True
+    background_color: tuple[int, int, int] | None = (18, 22, 30)
+    visualization_frame: VisualizationFrame = VisualizationFrame.FLU
 
 
 class RerunVisualizer:
@@ -70,6 +88,7 @@ class RerunVisualizer:
         self._rr = self._import_rerun()
         self._latest_wrist_by_side: dict[HandSide, WristPose] = {}
         self._rr.init(self._config.application_id, spawn=self._config.spawn)
+        self._apply_view_background()
 
     def log_packet(self, packet: ParsedPacket) -> None:
         """Log one parsed packet to Rerun.
@@ -104,7 +123,7 @@ class RerunVisualizer:
                 f"{side_path}/landmarks",
                 points,
                 radius=self._config.landmark_radius,
-                color=self._config.landmark_color,
+                color=self._landmark_color(packet.side),
             )
 
     def log_frame(self, frame: HandFrame) -> None:
@@ -132,7 +151,7 @@ class RerunVisualizer:
             f"{base}/landmarks",
             points,
             radius=self._config.landmark_radius,
-            color=self._config.landmark_color,
+            color=self._landmark_color(visual_frame.side),
         )
 
     def log_event(self, event: ParsedPacket | HandFrame) -> None:
@@ -154,7 +173,8 @@ class RerunVisualizer:
         radius: float,
         color: tuple[int, int, int],
     ) -> None:
-        points_as_lists = [[x, y, z] for x, y, z in points]
+        mapped_points = [self._map_point_frame(x=x, y=y, z=z) for x, y, z in points]
+        points_as_lists = [[x, y, z] for x, y, z in mapped_points]
         self._rr.log(
             path,
             self._rr.Points3D(
@@ -173,6 +193,40 @@ class RerunVisualizer:
             ) from exc
 
         return module
+
+    def _apply_view_background(self) -> None:
+        """Apply optional background color to the default 3D view."""
+        if self._config.background_color is None:
+            return
+
+        if not hasattr(self._rr, "send_blueprint"):
+            return
+
+        try:
+            blueprint_module = importlib.import_module("rerun.blueprint")
+        except ModuleNotFoundError:
+            return
+
+        blueprint = blueprint_module.Blueprint(
+            blueprint_module.Spatial3DView(
+                origin="/",
+                name="3D Scene",
+                background=list(self._config.background_color),
+            )
+        )
+        self._rr.send_blueprint(blueprint)
+
+    def _landmark_color(self, side: HandSide) -> tuple[int, int, int]:
+        if side == HandSide.LEFT:
+            return self._config.left_landmark_color
+        return self._config.right_landmark_color
+
+    def _map_point_frame(self, *, x: float, y: float, z: float) -> tuple[float, float, float]:
+        if self._config.visualization_frame == VisualizationFrame.SDK:
+            return (x, y, z)
+
+        # Map SDK point basis to FLU: x=forward, y=left, z=up.
+        return (x, z, -y)
 
     def _transform_landmarks_by_wrist(
         self,
