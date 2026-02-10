@@ -19,6 +19,7 @@ def test_frame_emits_only_when_both_components_present() -> None:
 
     assert frame is not None
     assert frame.side == HandSide.RIGHT
+    assert frame.frame_id == "hts_right_hand"
     assert frame.sequence_id == 0
     assert frame.recv_ts_ns == 120
     assert frame.wrist_recv_ts_ns == 100
@@ -104,3 +105,22 @@ def test_default_timestamps_are_generated() -> None:
     assert frame.recv_ts_ns > 0
     assert frame.recv_time_unix_ns is not None
     assert frame.recv_time_unix_ns > 0
+
+
+def test_custom_frame_id_mapping_is_applied() -> None:
+    assembler = HandFrameAssembler(
+        frame_id_by_side={
+            HandSide.LEFT: "left_hand_link",
+            HandSide.RIGHT: "right_hand_link",
+        }
+    )
+
+    assembler.push_line("Left wrist:, 1, 2, 3, 4, 5, 6, 7", recv_ts_ns=10, recv_time_unix_ns=10)
+    frame = assembler.push_line(
+        "Left landmarks:, " + ", ".join(str(i) for i in range(63)),
+        recv_ts_ns=11,
+        recv_time_unix_ns=11,
+    )
+
+    assert frame is not None
+    assert frame.frame_id == "left_hand_link"

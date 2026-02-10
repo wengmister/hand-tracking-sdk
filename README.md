@@ -98,6 +98,23 @@ Additional high-level client exceptions:
 - `ClientConfigurationError`
 - `ClientCallbackError`
 
+Core SDK types also include these fields and helpers for further integration:
+- `HandFrame.frame_id` (explicit frame identifier)
+- timestamps for receive/source tracking:
+  - `recv_ts_ns`
+  - `recv_time_unix_ns`
+  - `source_ts_ns`
+- deterministic serialization helpers:
+  - `WristPose.to_dict()` / `WristPose.from_dict()`
+  - `HandLandmarks.to_dict()` / `HandLandmarks.from_dict()`
+  - `HandFrame.to_dict()` / `HandFrame.from_dict()`
+
+`HandFrameAssembler` defaults to:
+- left frame id: `hts_left_hand`
+- right frame id: `hts_right_hand`
+
+You can override these via `frame_id_by_side` for middleware-specific naming.
+
 ## Example
 
 ```python

@@ -95,6 +95,7 @@ def convert_hand_frame_unity_left_to_right(frame: HandFrame) -> HandFrame:
     """
     return HandFrame(
         side=frame.side,
+        frame_id=frame.frame_id,
         wrist=convert_wrist_pose_unity_left_to_right(frame.wrist),
         landmarks=convert_landmarks_unity_left_to_right(frame.landmarks),
         sequence_id=frame.sequence_id,

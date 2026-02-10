@@ -61,6 +61,7 @@ def test_wrist_and_landmarks_conversion() -> None:
 def test_hand_frame_conversion_preserves_metadata() -> None:
     frame = HandFrame(
         side=HandSide.LEFT,
+        frame_id="left_hand_link",
         wrist=WristPose(x=1.0, y=2.0, z=3.0, qx=0.0, qy=0.0, qz=0.0, qw=1.0),
         landmarks=HandLandmarks(points=((1.0, 2.0, 3.0),)),
         sequence_id=5,
@@ -74,6 +75,7 @@ def test_hand_frame_conversion_preserves_metadata() -> None:
     converted = convert_hand_frame_unity_left_to_right(frame)
 
     assert converted.side == HandSide.LEFT
+    assert converted.frame_id == "left_hand_link"
     assert converted.sequence_id == 5
     assert converted.recv_ts_ns == 101
     assert converted.recv_time_unix_ns == 202

@@ -2,8 +2,10 @@
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from dataclasses import dataclass
 from time import monotonic_ns, time_ns
+from typing import Any
 
 from hand_tracking_sdk.models import (
     HandLandmarks,
@@ -22,6 +24,8 @@ class HandFrame:
 
     :param side:
         Hand side for this frame.
+    :param frame_id:
+        Frame identifier for downstream middleware mapping (for example ROS2).
     :param wrist:
         Wrist pose payload.
     :param landmarks:
@@ -41,6 +45,7 @@ class HandFrame:
     """
 
     side: HandSide
+    frame_id: str
     wrist: WristPose
     landmarks: HandLandmarks
     sequence_id: int
@@ -49,6 +54,49 @@ class HandFrame:
     source_ts_ns: int | None
     wrist_recv_ts_ns: int
     landmarks_recv_ts_ns: int
+
+    def to_dict(self) -> dict[str, Any]:
+        """Serialize frame into a deterministic mapping-friendly dictionary.
+
+        :returns:
+            Dictionary representation suitable for adapter-layer mapping.
+        """
+        return {
+            "side": self.side.value,
+            "frame_id": self.frame_id,
+            "wrist": self.wrist.to_dict(),
+            "landmarks": self.landmarks.to_dict(),
+            "sequence_id": self.sequence_id,
+            "recv_ts_ns": self.recv_ts_ns,
+            "recv_time_unix_ns": self.recv_time_unix_ns,
+            "source_ts_ns": self.source_ts_ns,
+            "wrist_recv_ts_ns": self.wrist_recv_ts_ns,
+            "landmarks_recv_ts_ns": self.landmarks_recv_ts_ns,
+        }
+
+    @classmethod
+    def from_dict(cls, values: Mapping[str, Any]) -> HandFrame:
+        """Build :class:`HandFrame` from serialized mapping data.
+
+        :param values:
+            Mapping containing side, frame metadata, and geometry payloads.
+        :returns:
+            Parsed frame object.
+        """
+        return cls(
+            side=HandSide(str(values["side"])),
+            frame_id=str(values["frame_id"]),
+            wrist=WristPose.from_dict(values["wrist"]),
+            landmarks=HandLandmarks.from_dict(values["landmarks"]),
+            sequence_id=int(values["sequence_id"]),
+            recv_ts_ns=int(values["recv_ts_ns"]),
+            recv_time_unix_ns=(
+                None if values["recv_time_unix_ns"] is None else int(values["recv_time_unix_ns"])
+            ),
+            source_ts_ns=(None if values["source_ts_ns"] is None else int(values["source_ts_ns"])),
+            wrist_recv_ts_ns=int(values["wrist_recv_ts_ns"]),
+            landmarks_recv_ts_ns=int(values["landmarks_recv_ts_ns"]),
+        )
 
 
 @dataclass(slots=True)
@@ -73,14 +121,27 @@ class HandFrameAssembler:
     - Stale component updates (older timestamps than currently stored) are ignored.
     """
 
-    def __init__(self, *, include_wall_time: bool = True) -> None:
+    def __init__(
+        self,
+        *,
+        include_wall_time: bool = True,
+        frame_id_by_side: Mapping[HandSide, str] | None = None,
+    ) -> None:
         """Create a frame assembler.
 
         :param include_wall_time:
             If ``True``, :class:`HandFrame` includes ``recv_time_unix_ns`` using
             ``time.time_ns()`` when caller does not provide one.
+        :param frame_id_by_side:
+            Optional per-side frame identifiers used in emitted frames.
         """
         self._include_wall_time = include_wall_time
+        self._frame_id_by_side = {
+            HandSide.LEFT: "hts_left_hand",
+            HandSide.RIGHT: "hts_right_hand",
+        }
+        if frame_id_by_side is not None:
+            self._frame_id_by_side.update(frame_id_by_side)
         self._state: dict[HandSide, _SideAssemblyState] = {
             HandSide.LEFT: _SideAssemblyState(),
             HandSide.RIGHT: _SideAssemblyState(),
@@ -245,6 +306,7 @@ class HandFrameAssembler:
 
         return HandFrame(
             side=side,
+            frame_id=self._frame_id_by_side[side],
             wrist=side_state.wrist,
             landmarks=side_state.landmarks,
             sequence_id=sequence_id,
