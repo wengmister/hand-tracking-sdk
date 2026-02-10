@@ -63,5 +63,8 @@ jobs:
       - name: Sync dependencies
         run: uv sync --frozen
 
+      - name: Install docs requirements
+        run: uv pip install -r docs/requirements.txt
+
       - name: Build docs
         run: uv run sphinx-build -W -b html docs docs/_build/html
