@@ -31,6 +31,49 @@ Streaming Frames
    for event in client.iter_events():
        print(event)
 
+Streaming Frames Over TCP
+-------------------------
+
+TCP server mode (recommended for HTS wired ADB reverse and wireless TCP when
+HTS is configured to connect to your host):
+
+.. code-block:: python
+
+   from hand_tracking_sdk import HTSClient, HTSClientConfig, StreamOutput, TransportMode
+
+   client = HTSClient(
+       HTSClientConfig(
+           transport_mode=TransportMode.TCP_SERVER,
+           host="0.0.0.0",
+           port=8000,
+           timeout_s=1.0,
+           output=StreamOutput.FRAMES,
+       )
+   )
+
+   for frame in client.iter_events():
+       print(frame)
+
+TCP client mode (You will probably never use this, but use when your SDK should connect to an existing TCP server):
+
+.. code-block:: python
+
+   from hand_tracking_sdk import HTSClient, HTSClientConfig, StreamOutput, TransportMode
+
+   client = HTSClient(
+       HTSClientConfig(
+           transport_mode=TransportMode.TCP_CLIENT,
+           host="127.0.0.1",
+           port=8000,
+           timeout_s=1.0,
+           reconnect_delay_s=0.25,
+           output=StreamOutput.FRAMES,
+       )
+   )
+
+   for frame in client.iter_events():
+       print(frame)
+
 Coordinate Conversion
 ---------------------
 
