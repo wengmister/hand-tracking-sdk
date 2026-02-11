@@ -10,7 +10,6 @@ from hand_tracking_sdk import (
     convert_hand_frame_unity_left_to_right,
     convert_landmarks_unity_left_to_right,
     convert_wrist_pose_unity_left_to_right,
-    sdk_to_flu_position,
     unity_left_to_flu_position,
     unity_left_to_right_position,
     unity_left_to_right_quaternion,
@@ -33,10 +32,6 @@ def _quat_equivalent(
 
 def test_position_conversion_flips_y() -> None:
     assert unity_left_to_right_position(1.0, 2.0, 3.0) == (1.0, -2.0, 3.0)
-
-
-def test_sdk_to_flu_position_mapping() -> None:
-    assert sdk_to_flu_position(1.0, 2.0, 3.0) == (3.0, -1.0, -2.0)
 
 
 def test_unity_right_to_flu_position_mapping() -> None:

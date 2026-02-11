@@ -27,11 +27,9 @@ def unity_left_to_right_position(x: float, y: float, z: float) -> tuple[float, f
 def unity_right_to_flu_position(x: float, y: float, z: float) -> tuple[float, float, float]:
     """Convert Unity right-handed coordinates into FLU basis.
 
-    Meta's (due to Unity's) left-handed coordinates have 
-    X-right, Y-up, Z-forward convention, while common robotics 
-    FLU basis have X-forward, Y-left, Z-up convention. 
-    This function applies the necessary axis remapping and sign 
-    flips to convert between these coordinate systems.
+    Unity right-handed coordinates use ``x=right, y=up, z=forward`` while
+    common robotics FLU basis uses ``x=forward, y=left, z=up``.
+    This function applies the required axis remapping and sign flips.
     See GitHub issue #2 for more details.
 
     :param x:
@@ -49,15 +47,9 @@ def unity_right_to_flu_position(x: float, y: float, z: float) -> tuple[float, fl
 def unity_left_to_flu_position(x: float, y: float, z: float) -> tuple[float, float, float]:
     """Convert Unity left-handed coordinates directly into FLU basis.
 
-    Meta's (due to Unity's) left-handed coordinates have 
-    X-right, Y-up, Z-forward convention, while common robotics 
-    FLU basis have X-forward, Y-left, Z-up convention. 
-    This function applies the necessary axis remapping and sign 
-    flips to convert between these coordinate systems.
-    See GitHub issue #2 for more details.
-
     This composes :func:`unity_left_to_right_position` followed by
-    :func:`unity_right_to_flu_position`.
+    :func:`unity_right_to_flu_position`, so Unity left-handed input is first
+    converted to Unity right-handed coordinates, then to FLU.
 
     :param x:
         Position X in Unity left-handed coordinates.
@@ -70,11 +62,6 @@ def unity_left_to_flu_position(x: float, y: float, z: float) -> tuple[float, flo
     """
     right_x, right_y, right_z = unity_left_to_right_position(x, y, z)
     return unity_right_to_flu_position(right_x, right_y, right_z)
-
-
-def sdk_to_flu_position(x: float, y: float, z: float) -> tuple[float, float, float]:
-    """Compatibility alias for :func:`unity_right_to_flu_position`."""
-    return unity_right_to_flu_position(x, y, z)
 
 
 def unity_left_to_right_quaternion(
