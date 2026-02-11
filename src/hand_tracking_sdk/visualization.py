@@ -12,6 +12,7 @@ from hand_tracking_sdk.convert import (
     convert_hand_frame_unity_left_to_right,
     convert_landmarks_unity_left_to_right,
     convert_wrist_pose_unity_left_to_right,
+    unity_right_to_flu_position,
 )
 from hand_tracking_sdk.frame import HandFrame
 from hand_tracking_sdk.models import HandSide, LandmarksPacket, ParsedPacket, WristPacket, WristPose
@@ -271,8 +272,7 @@ class RerunVisualizer:
         if self._config.visualization_frame == VisualizationFrame.SDK:
             return (x, y, z)
 
-        # Map SDK point basis to FLU: x=forward, y=left, z=up.
-        return (z, -x, -y)
+        return unity_right_to_flu_position(x=x, y=y, z=z)
 
     def _transform_landmarks_by_wrist(
         self,
