@@ -55,10 +55,12 @@ class _FakeBlueprint(ModuleType):
             origin: str,
             name: str,
             background: list[int],
+            eye_controls: object | None = None,
         ) -> None:
             self.origin = origin
             self.name = name
             self.background = background
+            self.eye_controls = eye_controls
 
     class Blueprint:
         def __init__(self, view: object) -> None:
@@ -162,7 +164,7 @@ def test_landmarks_are_transformed_by_wrist_pose(monkeypatch: pytest.MonkeyPatch
         payload for path, payload in fake.logs if path == "hands/left/landmarks"
     )
     assert isinstance(landmarks_payload, _FakeRerun.Points3D)
-    assert landmarks_payload.points == [[11.0, 33.0, 22.0]]
+    assert landmarks_payload.points == [[33.0, -11.0, 22.0]]
     assert landmarks_payload.radii == [0.015]
     assert landmarks_payload.colors == [[64, 128, 255]]
 
