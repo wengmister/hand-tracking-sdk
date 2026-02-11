@@ -23,5 +23,5 @@ Key Features
 - Stream events via high-level client APIs with filtering and observability.
 
 Supported Python Version
-------------
+------------------------
 - Python 3.10 and above
