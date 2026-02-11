@@ -225,11 +225,21 @@ class RerunVisualizer:
         except ModuleNotFoundError:
             return
 
+        eye_controls = None
+        if hasattr(blueprint_module, "EyeControls3D"):
+            eye_controls = blueprint_module.EyeControls3D(
+                kind=blueprint_module.Eye3DKind.Orbital,
+                position=[-0.06, 0.02, 1.5],
+                look_target=[0.2, 0.02, 1.5],
+                eye_up=[0.0, 0.0, 1.0],
+            )
+
         blueprint = blueprint_module.Blueprint(
             blueprint_module.Spatial3DView(
                 origin="/",
                 name="3D Scene",
                 background=list(self._config.background_color),
+                eye_controls=eye_controls,
             )
         )
         self._rr.send_blueprint(blueprint)
@@ -262,7 +272,7 @@ class RerunVisualizer:
             return (x, y, z)
 
         # Map SDK point basis to FLU: x=forward, y=left, z=up.
-        return (x, z, -y)
+        return (z, -x, -y)
 
     def _transform_landmarks_by_wrist(
         self,
