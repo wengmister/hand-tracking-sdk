@@ -4,10 +4,10 @@ from __future__ import annotations
 
 import importlib
 from dataclasses import dataclass
-from enum import StrEnum
 from types import ModuleType
 from typing import cast
 
+from hand_tracking_sdk._compat import StrEnum
 from hand_tracking_sdk.convert import (
     convert_hand_frame_unity_left_to_right,
     convert_landmarks_unity_left_to_right,
