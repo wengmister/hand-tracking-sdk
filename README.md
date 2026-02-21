@@ -117,6 +117,12 @@ Run host signaling/media service:
 uv run --with "hand-tracking-sdk[video]" python examples/video_host_service.py --signaling-host 0.0.0.0 --signaling-port 8765 --source test --preset 720p30
 ```
 
+For handshake/signaling diagnostics:
+
+```bash
+uv run --with "hand-tracking-sdk[video]" python examples/video_host_service.py --signaling-host 0.0.0.0 --signaling-port 8765 --source test --preset 720p30 --verbose
+```
+
 This service exposes:
 - control/signaling over WebSocket (`type`, `session_id`, `payload`)
 - one outbound WebRTC H.264 video stream
