@@ -34,6 +34,13 @@ dependencies = [
 visualization = [
   "rerun-sdk>=0.17.0"
 ]
+video = [
+  "aiortc>=1.9.0",
+  "av>=12.0.0",
+  "numpy>=2.0.0",
+  "opencv-python>=4.10.0",
+  "websockets>=12.0",
+]
 
 [project.urls]
 Homepage = "https://github.com/wengmister/hand-tracking-sdk"

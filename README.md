@@ -89,6 +89,9 @@ CLI example script:
 uv run --with rerun-sdk python examples/visualize_rerun.py --transport tcp_server --host 0.0.0.0 --port 8000
 ```
 
+The rerun example now also logs jitter/drop metrics under `metrics/jitter/<side>/...`
+when `--show-jitter-panel` is enabled.
+
 By default, the visualizer converts Unity left-handed coordinates to right-handed view.
 Landmarks are treated as wrist-relative and rendered in the corresponding wrist frame.
 Landmark colors are per hand by default: left=blue, right=red.
@@ -99,6 +102,25 @@ Other example scripts:
   `uv run python examples/stream_frames.py --transport tcp_server --host 0.0.0.0 --port 8000`
 - JSONL capture for replay/analysis:
   `uv run python examples/log_to_jsonl.py --transport tcp_server --host 0.0.0.0 --port 8000 --output both --path runs/hand_tracking.jsonl`
+
+## Optional Video Host Service (WebRTC + WebSocket)
+
+Install video extras:
+
+```bash
+pip install "hand-tracking-sdk[video]"
+```
+
+Run host signaling/media service:
+
+```bash
+uv run --with "hand-tracking-sdk[video]" python examples/video_host_service.py --signaling-host 0.0.0.0 --signaling-port 8765 --source test --preset 720p30
+```
+
+This service exposes:
+- control/signaling over WebSocket (`type`, `session_id`, `payload`)
+- one outbound WebRTC H.264 video stream
+- test pattern or webcam source adapters
 
 ## Streaming Client API
 

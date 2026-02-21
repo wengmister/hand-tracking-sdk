@@ -256,13 +256,11 @@ class RerunVisualizer:
                 eye_up=[0.0, 0.0, 1.0],
             )
 
-        blueprint = blueprint_module.Blueprint(
-            blueprint_module.Spatial3DView(
-                origin="/",
-                name="3D Scene",
-                background=list(self._config.background_color),
-                eye_controls=eye_controls,
-            )
+        spatial_view = blueprint_module.Spatial3DView(
+            origin="/",
+            name="3D Scene",
+            background=list(self._config.background_color),
+            eye_controls=eye_controls,
         )
 
         if not self._config.show_jitter_panel or not hasattr(blueprint_module, "TimeSeriesView"):
