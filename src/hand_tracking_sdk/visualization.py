@@ -3,7 +3,8 @@
 from __future__ import annotations
 
 import importlib
-from dataclasses import dataclass
+from collections import deque
+from dataclasses import dataclass, field
 from enum import StrEnum
 from types import ModuleType
 from typing import cast
@@ -55,6 +56,10 @@ class RerunVisualizerConfig:
     :param visualization_frame:
         Point frame convention for visualization output.
         ``flu`` means ``x=forward, y=left, z=up``.
+    :param show_jitter_panel:
+        If ``True``, log jitter/drop scalar metrics under ``metrics/jitter/...``.
+    :param jitter_window_size:
+        Rolling window size for jitter percentile metrics.
     """
 
     application_id: str = "hand-tracking-sdk"
@@ -68,6 +73,16 @@ class RerunVisualizerConfig:
     convert_to_right_handed: bool = True
     background_color: tuple[int, int, int] | None = (18, 22, 30)
     visualization_frame: VisualizationFrame = VisualizationFrame.FLU
+    show_jitter_panel: bool = False
+    jitter_window_size: int = 200
+
+
+@dataclass(slots=True)
+class _JitterSideState:
+    prev_recv_ts_ns: int | None = None
+    prev_source_ts_ns: int | None = None
+    prev_source_frame_seq: int | None = None
+    jitter_ns_window: deque[int] = field(default_factory=deque)
 
 
 class RerunVisualizer:
@@ -87,6 +102,10 @@ class RerunVisualizer:
         self._config = config or RerunVisualizerConfig()
         self._rr = self._import_rerun()
         self._latest_wrist_by_side: dict[HandSide, WristPose] = {}
+        self._jitter_state_by_side: dict[HandSide, _JitterSideState] = {
+            HandSide.LEFT: _JitterSideState(),
+            HandSide.RIGHT: _JitterSideState(),
+        }
         self._rr.init(self._config.application_id, spawn=self._config.spawn)
         self._apply_view_background()
 
@@ -153,6 +172,8 @@ class RerunVisualizer:
             radius=self._config.landmark_radius,
             color=self._landmark_color(visual_frame.side),
         )
+        if self._config.show_jitter_panel:
+            self._log_jitter_metrics(visual_frame)
 
     def log_event(self, event: ParsedPacket | HandFrame) -> None:
         """Log either packet or frame event.
@@ -225,14 +246,29 @@ class RerunVisualizer:
         except ModuleNotFoundError:
             return
 
-        blueprint = blueprint_module.Blueprint(
-            blueprint_module.Spatial3DView(
-                origin="/",
-                name="3D Scene",
-                background=list(self._config.background_color),
-            )
+        spatial_view = blueprint_module.Spatial3DView(
+            origin="/",
+            name="3D Scene",
+            background=list(self._config.background_color),
         )
-        self._rr.send_blueprint(blueprint)
+
+        if not self._config.show_jitter_panel or not hasattr(blueprint_module, "TimeSeriesView"):
+            self._rr.send_blueprint(blueprint_module.Blueprint(spatial_view))
+            return
+
+        try:
+            jitter_view = blueprint_module.TimeSeriesView(
+                origin="/metrics/jitter",
+                name="Jitter",
+            )
+            if hasattr(blueprint_module, "Horizontal"):
+                layout = blueprint_module.Horizontal(spatial_view, jitter_view)
+            else:
+                layout = [spatial_view, jitter_view]
+            self._rr.send_blueprint(blueprint_module.Blueprint(layout))
+        except Exception:
+            # Fall back to plain 3D blueprint if viewer API shape differs by rerun version.
+            self._rr.send_blueprint(blueprint_module.Blueprint(spatial_view))
 
     def _landmark_color(self, side: HandSide) -> tuple[int, int, int]:
         """Return the configured landmark color for a hand side.
@@ -292,6 +328,59 @@ class RerunVisualizer:
             )
             transformed.append((rx + wrist.x, ry + wrist.y, rz + wrist.z))
         return tuple(transformed)
+
+    def _log_jitter_metrics(self, frame: HandFrame) -> None:
+        """Log per-side jitter and drop metrics as scalar timeseries."""
+        if frame.source_ts_ns is None:
+            return
+
+        side = frame.side
+        state = self._jitter_state_by_side[side]
+        base = f"metrics/jitter/{side.value.lower()}"
+
+        if state.prev_recv_ts_ns is not None and state.prev_source_ts_ns is not None:
+            source_dt_ns = frame.source_ts_ns - state.prev_source_ts_ns
+            recv_dt_ns = frame.recv_ts_ns - state.prev_recv_ts_ns
+            jitter_ns = recv_dt_ns - source_dt_ns
+
+            self._append_jitter_window(state.jitter_ns_window, jitter_ns)
+            self._log_scalar(f"{base}/source_dt_ms", source_dt_ns / 1e6)
+            self._log_scalar(f"{base}/recv_dt_ms", recv_dt_ns / 1e6)
+            self._log_scalar(f"{base}/jitter_ms", jitter_ns / 1e6)
+            self._log_scalar(
+                f"{base}/jitter_p95_ms",
+                self._percentile_ms(state.jitter_ns_window, 0.95),
+            )
+
+        if frame.source_frame_seq is not None and state.prev_source_frame_seq is not None:
+            dropped = max(0, frame.source_frame_seq - state.prev_source_frame_seq - 1)
+            self._log_scalar(f"{base}/drop_gap_frames", float(dropped))
+
+        state.prev_recv_ts_ns = frame.recv_ts_ns
+        state.prev_source_ts_ns = frame.source_ts_ns
+        state.prev_source_frame_seq = frame.source_frame_seq
+
+    def _append_jitter_window(self, window: deque[int], value: int) -> None:
+        """Append to a bounded jitter window."""
+        window.append(value)
+        while len(window) > self._config.jitter_window_size:
+            window.popleft()
+
+    def _percentile_ms(self, values_ns: deque[int], fraction: float) -> float:
+        """Return percentile value in milliseconds for a small rolling window."""
+        if not values_ns:
+            return 0.0
+        sorted_values = sorted(values_ns)
+        index = int(round((len(sorted_values) - 1) * fraction))
+        return sorted_values[index] / 1e6
+
+    def _log_scalar(self, path: str, value: float) -> None:
+        """Log one scalar point, with compatibility across rerun SDK versions."""
+        if hasattr(self._rr, "Scalar"):
+            self._rr.log(path, self._rr.Scalar(value))
+            return
+        if hasattr(self._rr, "Scalars"):
+            self._rr.log(path, self._rr.Scalars([value]))
 
 
 def _rotate_vector_by_quaternion(

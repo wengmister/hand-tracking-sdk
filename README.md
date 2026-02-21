@@ -93,6 +93,9 @@ CLI example script:
 uv run --with rerun-sdk python examples/visualize_rerun.py --transport tcp_server --host 0.0.0.0 --port 8000
 ```
 
+The rerun example now also logs jitter/drop metrics under `metrics/jitter/<side>/...`
+when `--show-jitter` is enabled.
+
 By default, the visualizer converts Unity left-handed coordinates to right-handed view.
 Landmarks are treated as wrist-relative and rendered in the corresponding wrist frame.
 Landmark colors are per hand by default: left=blue, right=red.

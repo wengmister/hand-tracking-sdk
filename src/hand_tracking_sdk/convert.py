@@ -104,6 +104,7 @@ def convert_hand_frame_unity_left_to_right(frame: HandFrame) -> HandFrame:
         source_ts_ns=frame.source_ts_ns,
         wrist_recv_ts_ns=frame.wrist_recv_ts_ns,
         landmarks_recv_ts_ns=frame.landmarks_recv_ts_ns,
+        source_frame_seq=frame.source_frame_seq,
     )
 
 

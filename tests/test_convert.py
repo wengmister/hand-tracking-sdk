@@ -70,6 +70,7 @@ def test_hand_frame_conversion_preserves_metadata() -> None:
         source_ts_ns=303,
         wrist_recv_ts_ns=111,
         landmarks_recv_ts_ns=112,
+        source_frame_seq=7,
     )
 
     converted = convert_hand_frame_unity_left_to_right(frame)
@@ -80,6 +81,7 @@ def test_hand_frame_conversion_preserves_metadata() -> None:
     assert converted.recv_ts_ns == 101
     assert converted.recv_time_unix_ns == 202
     assert converted.source_ts_ns == 303
+    assert converted.source_frame_seq == 7
     assert converted.wrist_recv_ts_ns == 111
     assert converted.landmarks_recv_ts_ns == 112
     assert converted.wrist.y == -2.0

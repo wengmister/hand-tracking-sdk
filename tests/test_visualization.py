@@ -46,6 +46,10 @@ class _FakeRerun(ModuleType):
             self.radii = radii
             self.colors = colors
 
+    class Scalar:
+        def __init__(self, value: float) -> None:
+            self.value = value
+
 
 class _FakeBlueprint(ModuleType):
     class Spatial3DView:
@@ -208,3 +212,62 @@ def test_default_visualizer_config_values() -> None:
     assert config.application_id == "hand-tracking-sdk"
     assert config.spawn is True
     assert config.landmarks_are_wrist_relative is True
+    assert config.show_jitter_panel is False
+
+
+def test_jitter_metrics_are_logged_from_frames(monkeypatch: pytest.MonkeyPatch) -> None:
+    fake = _FakeRerun()
+    fake_blueprint = _FakeBlueprint("rerun.blueprint")
+
+    def _import(module_name: str) -> ModuleType:
+        if module_name == "rerun":
+            return fake
+        if module_name == "rerun.blueprint":
+            return fake_blueprint
+        raise ModuleNotFoundError(module_name)
+
+    monkeypatch.setattr("importlib.import_module", _import)
+    visualizer = RerunVisualizer(
+        RerunVisualizerConfig(
+            application_id="hts-test",
+            spawn=False,
+            show_jitter_panel=True,
+        )
+    )
+
+    frame_1 = HandFrame(
+        side=HandSide.RIGHT,
+        frame_id="right_hand_link",
+        wrist=WristPose(x=0.0, y=0.0, z=0.0, qx=0.0, qy=0.0, qz=0.0, qw=1.0),
+        landmarks=HandLandmarks(points=((0.0, 0.0, 0.0),)),
+        sequence_id=0,
+        recv_ts_ns=1_000_000_000,
+        recv_time_unix_ns=2_000_000_000,
+        source_ts_ns=500_000_000,
+        wrist_recv_ts_ns=900_000_000,
+        landmarks_recv_ts_ns=950_000_000,
+        source_frame_seq=10,
+    )
+    frame_2 = HandFrame(
+        side=HandSide.RIGHT,
+        frame_id="right_hand_link",
+        wrist=WristPose(x=0.0, y=0.0, z=0.0, qx=0.0, qy=0.0, qz=0.0, qw=1.0),
+        landmarks=HandLandmarks(points=((0.0, 0.0, 0.0),)),
+        sequence_id=1,
+        recv_ts_ns=1_020_000_000,
+        recv_time_unix_ns=2_020_000_000,
+        source_ts_ns=510_000_000,
+        wrist_recv_ts_ns=1_010_000_000,
+        landmarks_recv_ts_ns=1_015_000_000,
+        source_frame_seq=12,
+    )
+
+    visualizer.log_frame(frame_1)
+    visualizer.log_frame(frame_2)
+
+    logged_paths = [path for path, _ in fake.logs]
+    assert "metrics/jitter/right/source_dt_ms" in logged_paths
+    assert "metrics/jitter/right/recv_dt_ms" in logged_paths
+    assert "metrics/jitter/right/jitter_ms" in logged_paths
+    assert "metrics/jitter/right/jitter_p95_ms" in logged_paths
+    assert "metrics/jitter/right/drop_gap_frames" in logged_paths

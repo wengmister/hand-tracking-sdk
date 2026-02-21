@@ -62,6 +62,18 @@ def _parse_args() -> argparse.Namespace:
         default="hand-tracking-sdk",
         help="Rerun application id.",
     )
+    parser.add_argument(
+        "--show-jitter",
+        action="store_true",
+        default=False,
+        help="Enable jitter/drop scalar timeseries panel.",
+    )
+    parser.add_argument(
+        "--jitter-window-size",
+        type=int,
+        default=200,
+        help="Rolling window size for jitter percentile metrics.",
+    )
     return parser.parse_args()
 
 
@@ -83,6 +95,8 @@ def _main() -> int:
     visualizer = RerunVisualizer(
         RerunVisualizerConfig(
             application_id=args.application_id,
+            show_jitter_panel=args.show_jitter_panel,
+            jitter_window_size=args.jitter_window_size,
         )
     )
 
