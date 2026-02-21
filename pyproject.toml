@@ -4,20 +4,22 @@ build-backend = "hatchling.build"
 
 [project]
 name = "hand-tracking-sdk"
-version = "0.2.0"
+version = "1.0.2"
 description = "Python SDK for Hand Tracking Streamer telemetry"
 readme = "README.md"
-requires-python = ">=3.12"
+requires-python = ">=3.10"
 license = { text = "Apache-2.0" }
 authors = [
   { name = "Hand Tracking SDK Contributors" }
 ]
 keywords = ["vr", "hand-tracking", "quest", "teleoperation", "robotics", "sdk"]
 classifiers = [
-  "Development Status :: 3 - Alpha",
+  "Development Status :: 5 - Production/Stable",
   "Intended Audience :: Developers",
   "License :: OSI Approved :: Apache Software License",
   "Programming Language :: Python :: 3",
+  "Programming Language :: Python :: 3.10",
+  "Programming Language :: Python :: 3.11",
   "Programming Language :: Python :: 3.12",
   "Programming Language :: Python :: 3.13",
   "Topic :: Software Development :: Libraries",
@@ -34,10 +36,10 @@ visualization = [
 ]
 
 [project.urls]
-Homepage = "https://github.com/wengmister/hand-tracking-streamer"
-Documentation = "https://github.com/wengmister/hand-tracking-streamer/blob/main/CONNECTIONS.md"
-Source = "https://github.com/wengmister/hand-tracking-streamer"
-Issues = "https://github.com/wengmister/hand-tracking-streamer/issues"
+Homepage = "https://github.com/wengmister/hand-tracking-sdk"
+Documentation = "https://hand-tracking-sdk.readthedocs.io/"
+Source = "https://github.com/wengmister/hand-tracking-sdk"
+Issues = "https://github.com/wengmister/hand-tracking-sdk/issues"
 
 [dependency-groups]
 dev = [
@@ -56,13 +58,13 @@ testpaths = ["tests"]
 
 [tool.ruff]
 line-length = 100
-target-version = "py312"
+target-version = "py310"
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "B", "UP", "N"]
 
 [tool.mypy]
-python_version = "3.12"
+python_version = "3.10"
 strict = true
 warn_return_any = true
 warn_unused_configs = true

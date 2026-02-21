@@ -1,5 +1,4 @@
 from collections.abc import Iterator
-from typing import Self
 
 import pytest
 
@@ -25,7 +24,7 @@ class FakeLineReceiver:
     def __init__(self, lines: list[str]) -> None:
         self._lines = lines
 
-    def __enter__(self) -> Self:
+    def __enter__(self) -> "FakeLineReceiver":
         return self
 
     def __exit__(self, *_: object) -> None:

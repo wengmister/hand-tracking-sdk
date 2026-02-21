@@ -4,9 +4,9 @@ from __future__ import annotations
 
 from collections.abc import Callable, Iterator
 from dataclasses import dataclass
-from enum import StrEnum
 from typing import Protocol
 
+from hand_tracking_sdk._compat import StrEnum
 from hand_tracking_sdk.exceptions import (
     ClientCallbackError,
     ClientConfigurationError,

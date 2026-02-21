@@ -5,14 +5,15 @@ from __future__ import annotations
 import importlib
 from collections import deque
 from dataclasses import dataclass, field
-from enum import StrEnum
 from types import ModuleType
 from typing import cast
 
+from hand_tracking_sdk._compat import StrEnum
 from hand_tracking_sdk.convert import (
     convert_hand_frame_unity_left_to_right,
     convert_landmarks_unity_left_to_right,
     convert_wrist_pose_unity_left_to_right,
+    unity_right_to_flu_position,
 )
 from hand_tracking_sdk.frame import HandFrame
 from hand_tracking_sdk.models import HandSide, LandmarksPacket, ParsedPacket, WristPacket, WristPose
@@ -246,10 +247,22 @@ class RerunVisualizer:
         except ModuleNotFoundError:
             return
 
-        spatial_view = blueprint_module.Spatial3DView(
-            origin="/",
-            name="3D Scene",
-            background=list(self._config.background_color),
+        eye_controls = None
+        if hasattr(blueprint_module, "EyeControls3D"):
+            eye_controls = blueprint_module.EyeControls3D(
+                kind=blueprint_module.Eye3DKind.Orbital,
+                position=[-0.06, 0.02, 1.5],
+                look_target=[0.2, 0.02, 1.5],
+                eye_up=[0.0, 0.0, 1.0],
+            )
+
+        blueprint = blueprint_module.Blueprint(
+            blueprint_module.Spatial3DView(
+                origin="/",
+                name="3D Scene",
+                background=list(self._config.background_color),
+                eye_controls=eye_controls,
+            )
         )
 
         if not self._config.show_jitter_panel or not hasattr(blueprint_module, "TimeSeriesView"):
@@ -297,8 +310,7 @@ class RerunVisualizer:
         if self._config.visualization_frame == VisualizationFrame.SDK:
             return (x, y, z)
 
-        # Map SDK point basis to FLU: x=forward, y=left, z=up.
-        return (x, z, -y)
+        return unity_right_to_flu_position(x=x, y=y, z=z)
 
     def _transform_landmarks_by_wrist(
         self,

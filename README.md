@@ -8,10 +8,6 @@ HTS streams UTF-8 CSV lines for wrist pose and hand landmarks.
 This SDK provides typed parsing and validation for:
 - wrist packets: 7 floats (`x, y, z, qx, qy, qz, qw`)
 - landmark packets: 63 floats (`21 x [x, y, z]`)
-- optional debug metadata in labels, for example:
-  - `Right wrist | f = 123 | t = 123456789: ...`
-  - `f` maps to `source_frame_seq`
-  - `t` maps to `source_ts_ns`
 
 Streamed joints are in Mediapipe-style 21 landmark points.
 
@@ -93,9 +89,6 @@ CLI example script:
 uv run --with rerun-sdk python examples/visualize_rerun.py --transport tcp_server --host 0.0.0.0 --port 8000
 ```
 
-The rerun example now also logs jitter/drop metrics under `metrics/jitter/<side>/...`
-when `--show-jitter` is enabled.
-
 By default, the visualizer converts Unity left-handed coordinates to right-handed view.
 Landmarks are treated as wrist-relative and rendered in the corresponding wrist frame.
 Landmark colors are per hand by default: left=blue, right=red.
@@ -120,17 +113,45 @@ Key controls:
 ```python
 from hand_tracking_sdk import HTSClient, HTSClientConfig, StreamOutput
 
-client = HTSClient(HTSClientConfig(output=StreamOutput.BOTH))
+client = HTSClient(
+    HTSClientConfig(
+        output=StreamOutput.BOTH,  # packets + assembled frames
+    )
+)
+
 for event in client.iter_events():
     print(event)
 ```
 
-Note: `StreamOutput.FRAMES` emits only when both wrist *and* landmarks packets have been received for a hand side.
-Note: default `error_policy` is `strict`; use `tolerant` to skip malformed lines instead of stopping the stream.
+## What HTS Sends
 
-## Observability and Error Model
+HTS emits UTF-8 CSV lines:
+- wrist packet: 7 floats (`x, y, z, qx, qy, qz, qw`)
+- landmarks packet: 63 floats (`21 x [x, y, z]`)
 
-`HTSClient` exposes structured counters and optional log hooks:
+The SDK validates packet labels, hand side, and exact value counts.
+
+## Core APIs
+
+- Streaming client:
+  - `HTSClient`, `HTSClientConfig`
+  - output modes: `packets`, `frames`, `both`
+  - transport modes: `udp`, `tcp_server`, `tcp_client`
+- Frame assembly:
+  - `HandFrameAssembler`
+  - emits a frame only when both wrist and landmarks are available
+- Coordinate conversion:
+  - `unity_left_to_right_position`
+  - `unity_left_to_right_quaternion`
+  - `convert_wrist_pose_unity_left_to_right`
+  - `convert_landmarks_unity_left_to_right`
+  - `convert_hand_frame_unity_left_to_right`
+- Parsing:
+  - `parse_line`
+
+## Observability
+
+`HTSClient` exposes runtime counters and structured log hooks:
 - `get_stats()` / `reset_stats()`
 - `ClientStats` counters:
   - `lines_received`, `parse_errors`, `dropped_lines`
@@ -148,43 +169,62 @@ Core SDK types also include these fields and helpers for further integration:
   - `recv_ts_ns`
   - `recv_time_unix_ns`
   - `source_ts_ns`
-  - `source_frame_seq` (optional upstream frame counter)
 - deterministic serialization helpers:
-  - `WristPose.to_dict()` / `WristPose.from_dict()`
-  - `HandLandmarks.to_dict()` / `HandLandmarks.from_dict()`
-  - `HandFrame.to_dict()` / `HandFrame.from_dict()`
+  - `WristPose.to_dict()` / `from_dict()`
+  - `HandLandmarks.to_dict()` / `from_dict()`
+  - `HandFrame.to_dict()` / `from_dict()`
 
-`HandFrameAssembler` defaults to:
-- left frame id: `hts_left_hand`
-- right frame id: `hts_right_hand`
+## Frame Structure
 
-You can override these via `frame_id_by_side` for middleware-specific naming.
+A `HandFrame` includes:
+- `side`: `Left` or `Right`
+- `frame_id`: frame name for downstream systems
+- `wrist`: `WristPose(x, y, z, qx, qy, qz, qw)`
+- `landmarks.points`: tuple of 21 `(x, y, z)` points
+- timing/sequence metadata (`sequence_id`, `recv_ts_ns`, `recv_time_unix_ns`, `source_ts_ns`)
 
-## Example
+To get telemetry for a specific joint from a frame, use `get_joint(...)`.
+Joint names and order follow the HTS streamed contract (wrist is `JointName.WRIST`).
 
 ```python
-from hand_tracking_sdk import parse_line
+from hand_tracking_sdk import HTSClient, HTSClientConfig, JointName, StreamOutput
 
-packet = parse_line("Right wrist:, 0.1, 0.2, 0.3, 0.0, 0.0, 0.0, 1.0")
-print(packet.side, packet.kind, packet.data)
+client = HTSClient(HTSClientConfig(output=StreamOutput.FRAMES))
+
+for frame in client.iter_events():
+    x, y, z = frame.get_joint(JointName.INDEX_TIP)
+    print(
+        f"side={frame.side.value} joint={JointName.INDEX_TIP.value} "
+        f"xyz=({x:.5f}, {y:.5f}, {z:.5f}) recv_ts_ns={frame.recv_ts_ns}"
+    )
 ```
 
-The parser validates packet label, side, and value count, and raises `ParseError` on malformed input.
+You can also query by finger group:
 
-## Protocol Reference
-
-- [`hand-tracking-streamer/README.md`](https://github.com/wengmister/hand-tracking-streamer/blob/main/README.md)
-- [`hand-tracking-streamer/CONNECTIONS.md`](https://github.com/wengmister/hand-tracking-streamer/blob/main/CONNECTIONS.md)
-
-## Documentation
-
-- Sphinx source lives in `docs/`
-- Read the Docs build config: `.readthedocs.yaml`
-- Local build command:
-
-```bash
-sphinx-build -b html docs docs/_build/html
+```python
+index_points = frame.get_finger("index")
+# returns dict[JointName, tuple[float, float, float]]
+# keys include JointName.INDEX_PROXIMAL, JointName.INDEX_TIP, ...
 ```
+
+## Examples
+
+- Rerun visualization:
+  - install extra: `pip install "hand-tracking-sdk[visualization]"`
+  - `uv run python examples/visualize_rerun.py --transport tcp_server --host 0.0.0.0 --port 8000`
+- Frame-only stream:
+  - `uv run python examples/stream_frames.py --transport tcp_server --host 0.0.0.0 --port 8000`
+- JSONL logging:
+  - `uv run python examples/log_to_jsonl.py --transport tcp_server --host 0.0.0.0 --port 8000 --output both --path runs/hand_tracking.jsonl`
+
+## Protocol and Docs
+
+- HTS protocol reference:
+  - [`hand-tracking-streamer/README.md`](https://github.com/wengmister/hand-tracking-streamer/blob/main/README.md)
+  - [`hand-tracking-streamer/CONNECTIONS.md`](https://github.com/wengmister/hand-tracking-streamer/blob/main/CONNECTIONS.md)
+- SDK docs:
+  - https://hand-tracking-sdk.readthedocs.io/
 
 ## License
+
 Apache-2.0

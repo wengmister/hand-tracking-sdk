@@ -17,8 +17,10 @@ from hand_tracking_sdk.convert import (
     convert_hand_frame_unity_left_to_right,
     convert_landmarks_unity_left_to_right,
     convert_wrist_pose_unity_left_to_right,
+    unity_left_to_flu_position,
     unity_left_to_right_position,
     unity_left_to_right_quaternion,
+    unity_right_to_flu_position,
 )
 from hand_tracking_sdk.exceptions import (
     ClientCallbackError,
@@ -35,8 +37,10 @@ from hand_tracking_sdk.exceptions import (
 )
 from hand_tracking_sdk.frame import HandFrame, HandFrameAssembler
 from hand_tracking_sdk.models import (
+    FingerName,
     HandLandmarks,
     HandSide,
+    JointName,
     LandmarksPacket,
     PacketDebugInfo,
     PacketType,
@@ -65,6 +69,7 @@ __all__ = [
     "ClientError",
     "ClientStats",
     "ErrorPolicy",
+    "FingerName",
     "HTSError",
     "HTSClient",
     "HTSClientConfig",
@@ -77,6 +82,7 @@ __all__ = [
     "LogEventKind",
     "PacketType",
     "PacketDebugInfo",
+    "JointName",
     "ParseError",
     "ParsedPacket",
     "StreamEvent",
@@ -105,6 +111,8 @@ __all__ = [
     "parse_line",
     "RerunVisualizer",
     "RerunVisualizerConfig",
+    "unity_left_to_flu_position",
     "unity_left_to_right_position",
     "unity_left_to_right_quaternion",
+    "unity_right_to_flu_position",
 ]

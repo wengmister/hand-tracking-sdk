@@ -24,6 +24,46 @@ def unity_left_to_right_position(x: float, y: float, z: float) -> tuple[float, f
     return (x, -y, z)
 
 
+def unity_right_to_flu_position(x: float, y: float, z: float) -> tuple[float, float, float]:
+    """Convert Unity right-handed coordinates into FLU basis.
+
+    Unity right-handed coordinates use ``x=right, y=up, z=forward`` while
+    common robotics FLU basis uses ``x=forward, y=left, z=up``.
+    This function applies the required axis remapping and sign flips.
+    See GitHub issue #2 for more details.
+
+    :param x:
+        Position X in Unity right-handed coordinates.
+    :param y:
+        Position Y in Unity right-handed coordinates.
+    :param z:
+        Position Z in Unity right-handed coordinates.
+    :returns:
+        Position converted into FLU basis.
+    """
+    return (z, -x, -y)
+
+
+def unity_left_to_flu_position(x: float, y: float, z: float) -> tuple[float, float, float]:
+    """Convert Unity left-handed coordinates directly into FLU basis.
+
+    This composes :func:`unity_left_to_right_position` followed by
+    :func:`unity_right_to_flu_position`, so Unity left-handed input is first
+    converted to Unity right-handed coordinates, then to FLU.
+
+    :param x:
+        Position X in Unity left-handed coordinates.
+    :param y:
+        Position Y in Unity left-handed coordinates.
+    :param z:
+        Position Z in Unity left-handed coordinates.
+    :returns:
+        Position converted into FLU basis.
+    """
+    right_x, right_y, right_z = unity_left_to_right_position(x, y, z)
+    return unity_right_to_flu_position(right_x, right_y, right_z)
+
+
 def unity_left_to_right_quaternion(
     qx: float,
     qy: float,

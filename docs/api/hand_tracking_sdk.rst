@@ -56,3 +56,11 @@ Exceptions Module
    :members:
    :undoc-members:
    :show-inheritance:
+
+Visualization Module
+--------------------
+
+.. automodule:: hand_tracking_sdk.visualization
+   :members:
+   :undoc-members:
+   :show-inheritance:
