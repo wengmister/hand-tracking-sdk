@@ -23,6 +23,14 @@ class PacketType(StrEnum):
 
 
 @dataclass(frozen=True, slots=True)
+class PacketDebugInfo:
+    """Optional source-side metadata attached to one streamed packet."""
+
+    source_frame_seq: int | None = None
+    source_ts_ns: int | None = None
+
+
+@dataclass(frozen=True, slots=True)
 class WristPose:
     """Cartesian wrist position and orientation quaternion."""
 
@@ -107,6 +115,7 @@ class WristPacket:
     side: HandSide
     kind: PacketType
     data: WristPose
+    debug: PacketDebugInfo | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -116,6 +125,7 @@ class LandmarksPacket:
     side: HandSide
     kind: PacketType
     data: HandLandmarks
+    debug: PacketDebugInfo | None = None
 
 
 ParsedPacket = WristPacket | LandmarksPacket

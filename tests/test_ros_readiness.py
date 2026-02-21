@@ -29,10 +29,12 @@ def test_hand_frame_roundtrip_dict() -> None:
         source_ts_ns=3000,
         wrist_recv_ts_ns=900,
         landmarks_recv_ts_ns=950,
+        source_frame_seq=42,
     )
 
     serialized = frame.to_dict()
     restored = HandFrame.from_dict(serialized)
 
     assert serialized["frame_id"] == "right_hand_link"
+    assert serialized["source_frame_seq"] == 42
     assert restored == frame

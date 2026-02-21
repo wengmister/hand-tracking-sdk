@@ -59,6 +59,8 @@ def _main() -> int:
             f" side={frame.side.value}"
             f" frame_id={frame.frame_id}"
             f" recv_ts_ns={frame.recv_ts_ns}"
+            f" source_ts_ns={frame.source_ts_ns}"
+            f" source_frame_seq={frame.source_frame_seq}"
             f" wrist=({frame.wrist.x:.3f}, {frame.wrist.y:.3f}, {frame.wrist.z:.3f})"
             f" landmarks={len(frame.landmarks.points)}"
         )

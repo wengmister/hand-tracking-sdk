@@ -38,6 +38,17 @@ def test_parse_trailing_comma_and_spaces() -> None:
     assert packet.data.qw == 7.0
 
 
+def test_parse_debug_metadata_from_label() -> None:
+    packet = parse_line(
+        "Right wrist | f = 123 | t = 987654321:, 0.1, 0.2, 0.3, 0.0, 0.0, 0.0, 1.0"
+    )
+
+    assert isinstance(packet, WristPacket)
+    assert packet.debug is not None
+    assert packet.debug.source_frame_seq == 123
+    assert packet.debug.source_ts_ns == 987654321
+
+
 @pytest.mark.parametrize(
     "line",
     [
@@ -48,6 +59,7 @@ def test_parse_trailing_comma_and_spaces() -> None:
         "Right wrist:, 1,2,3",
         "Left landmarks:, 1,2,3",
         "Right wrist:, 1,2,3,4,5,6,foo",
+        "Right wrist | f = nope:, 1,2,3,4,5,6,7",
     ],
 )
 def test_parse_invalid_lines_raise(line: str) -> None:

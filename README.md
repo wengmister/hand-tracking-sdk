@@ -8,6 +8,10 @@ HTS streams UTF-8 CSV lines for wrist pose and hand landmarks.
 This SDK provides typed parsing and validation for:
 - wrist packets: 7 floats (`x, y, z, qx, qy, qz, qw`)
 - landmark packets: 63 floats (`21 x [x, y, z]`)
+- optional debug metadata in labels, for example:
+  - `Right wrist | f = 123 | t = 123456789: ...`
+  - `f` maps to `source_frame_seq`
+  - `t` maps to `source_ts_ns`
 
 Streamed joints are in Mediapipe-style 21 landmark points.
 
@@ -141,6 +145,7 @@ Core SDK types also include these fields and helpers for further integration:
   - `recv_ts_ns`
   - `recv_time_unix_ns`
   - `source_ts_ns`
+  - `source_frame_seq` (optional upstream frame counter)
 - deterministic serialization helpers:
   - `WristPose.to_dict()` / `WristPose.from_dict()`
   - `HandLandmarks.to_dict()` / `HandLandmarks.from_dict()`

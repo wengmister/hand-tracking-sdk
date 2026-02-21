@@ -38,6 +38,8 @@ class HandFrame:
         Optional wall-clock timestamp in Unix nanoseconds.
     :param source_ts_ns:
         Optional source timestamp supplied by upstream sender.
+    :param source_frame_seq:
+        Optional upstream source frame sequence identifier.
     :param wrist_recv_ts_ns:
         Receive timestamp of the wrist payload included in this frame.
     :param landmarks_recv_ts_ns:
@@ -54,6 +56,7 @@ class HandFrame:
     source_ts_ns: int | None
     wrist_recv_ts_ns: int
     landmarks_recv_ts_ns: int
+    source_frame_seq: int | None = None
 
     def to_dict(self) -> dict[str, Any]:
         """Serialize frame into a deterministic mapping-friendly dictionary.
@@ -70,6 +73,7 @@ class HandFrame:
             "recv_ts_ns": self.recv_ts_ns,
             "recv_time_unix_ns": self.recv_time_unix_ns,
             "source_ts_ns": self.source_ts_ns,
+            "source_frame_seq": self.source_frame_seq,
             "wrist_recv_ts_ns": self.wrist_recv_ts_ns,
             "landmarks_recv_ts_ns": self.landmarks_recv_ts_ns,
         }
@@ -94,6 +98,11 @@ class HandFrame:
                 None if values["recv_time_unix_ns"] is None else int(values["recv_time_unix_ns"])
             ),
             source_ts_ns=(None if values["source_ts_ns"] is None else int(values["source_ts_ns"])),
+            source_frame_seq=(
+                None
+                if values.get("source_frame_seq") is None
+                else int(values["source_frame_seq"])
+            ),
             wrist_recv_ts_ns=int(values["wrist_recv_ts_ns"]),
             landmarks_recv_ts_ns=int(values["landmarks_recv_ts_ns"]),
         )
@@ -107,6 +116,10 @@ class _SideAssemblyState:
     wrist_recv_ts_ns: int | None = None
     landmarks: HandLandmarks | None = None
     landmarks_recv_ts_ns: int | None = None
+    wrist_source_ts_ns: int | None = None
+    landmarks_source_ts_ns: int | None = None
+    wrist_source_frame_seq: int | None = None
+    landmarks_source_frame_seq: int | None = None
     last_emitted_wrist_recv_ts_ns: int | None = None
     last_emitted_landmarks_recv_ts_ns: int | None = None
     next_sequence_id: int = 0
@@ -197,6 +210,12 @@ class HandFrameAssembler:
                 return None
             side_state.wrist = packet.data
             side_state.wrist_recv_ts_ns = recv_ts_ns_value
+            side_state.wrist_source_ts_ns = (
+                packet.debug.source_ts_ns if packet.debug is not None else None
+            )
+            side_state.wrist_source_frame_seq = (
+                packet.debug.source_frame_seq if packet.debug is not None else None
+            )
         elif isinstance(packet, LandmarksPacket):
             if (
                 side_state.landmarks_recv_ts_ns is not None
@@ -205,6 +224,12 @@ class HandFrameAssembler:
                 return None
             side_state.landmarks = packet.data
             side_state.landmarks_recv_ts_ns = recv_ts_ns_value
+            side_state.landmarks_source_ts_ns = (
+                packet.debug.source_ts_ns if packet.debug is not None else None
+            )
+            side_state.landmarks_source_frame_seq = (
+                packet.debug.source_frame_seq if packet.debug is not None else None
+            )
 
         return self._maybe_emit_frame(
             side=packet.side,
@@ -304,6 +329,27 @@ class HandFrameAssembler:
         side_state.last_emitted_wrist_recv_ts_ns = side_state.wrist_recv_ts_ns
         side_state.last_emitted_landmarks_recv_ts_ns = side_state.landmarks_recv_ts_ns
 
+        resolved_source_ts_ns = source_ts_ns
+        if resolved_source_ts_ns is None:
+            source_ts_candidates = [
+                ts
+                for ts in (side_state.wrist_source_ts_ns, side_state.landmarks_source_ts_ns)
+                if ts is not None
+            ]
+            resolved_source_ts_ns = max(source_ts_candidates) if source_ts_candidates else None
+
+        source_frame_seq_candidates = [
+            seq
+            for seq in (
+                side_state.wrist_source_frame_seq,
+                side_state.landmarks_source_frame_seq,
+            )
+            if seq is not None
+        ]
+        resolved_source_frame_seq = (
+            max(source_frame_seq_candidates) if source_frame_seq_candidates else None
+        )
+
         return HandFrame(
             side=side,
             frame_id=self._frame_id_by_side[side],
@@ -312,7 +358,8 @@ class HandFrameAssembler:
             sequence_id=sequence_id,
             recv_ts_ns=max(side_state.wrist_recv_ts_ns, side_state.landmarks_recv_ts_ns),
             recv_time_unix_ns=recv_time_unix_ns,
-            source_ts_ns=source_ts_ns,
+            source_ts_ns=resolved_source_ts_ns,
+            source_frame_seq=resolved_source_frame_seq,
             wrist_recv_ts_ns=side_state.wrist_recv_ts_ns,
             landmarks_recv_ts_ns=side_state.landmarks_recv_ts_ns,
         )

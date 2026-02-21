@@ -124,3 +124,22 @@ def test_custom_frame_id_mapping_is_applied() -> None:
 
     assert frame is not None
     assert frame.frame_id == "left_hand_link"
+
+
+def test_frame_uses_source_debug_metadata_when_available() -> None:
+    assembler = HandFrameAssembler()
+
+    assembler.push_line(
+        "Right wrist | f = 7 | t = 1000:, 0.1, 0.2, 0.3, 0.0, 0.0, 0.0, 1.0",
+        recv_ts_ns=10,
+        recv_time_unix_ns=10,
+    )
+    frame = assembler.push_line(
+        "Right landmarks | f = 7 | t = 1000:, " + ", ".join(str(i / 100.0) for i in range(63)),
+        recv_ts_ns=20,
+        recv_time_unix_ns=20,
+    )
+
+    assert frame is not None
+    assert frame.source_ts_ns == 1000
+    assert frame.source_frame_seq == 7

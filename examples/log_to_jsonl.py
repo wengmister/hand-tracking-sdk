@@ -68,6 +68,14 @@ def _event_to_dict(event: HandFrame | WristPacket | LandmarksPacket) -> dict[str
             "packet_type": "wrist",
             "side": event.side.value,
             "logged_at_unix_ns": time_ns(),
+            "debug": (
+                None
+                if event.debug is None
+                else {
+                    "source_frame_seq": event.debug.source_frame_seq,
+                    "source_ts_ns": event.debug.source_ts_ns,
+                }
+            ),
             "data": event.data.to_dict(),
         }
     return {
@@ -75,6 +83,14 @@ def _event_to_dict(event: HandFrame | WristPacket | LandmarksPacket) -> dict[str
         "packet_type": "landmarks",
         "side": event.side.value,
         "logged_at_unix_ns": time_ns(),
+        "debug": (
+            None
+            if event.debug is None
+            else {
+                "source_frame_seq": event.debug.source_frame_seq,
+                "source_ts_ns": event.debug.source_ts_ns,
+            }
+        ),
         "data": event.data.to_dict(),
     }
 
