@@ -2,7 +2,9 @@
 
 Example:
     uv run --with "hand-tracking-sdk[video]" python examples/video_host_service.py \
-        --signaling-host 0.0.0.0 --signaling-port 8765 --source test --preset 720p30
+        --tcp-host 0.0.0.0 --tcp-port 8765 \
+        --mocap-tcp-host 0.0.0.0 --mocap-tcp-port 8000 \
+        --source webcam --webcam-index 0 --preset 720p30 --verbose
 """
 
 from __future__ import annotations
