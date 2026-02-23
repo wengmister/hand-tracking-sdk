@@ -2,7 +2,7 @@
 
 Example:
     uv run python examples/log_to_jsonl.py --transport tcp_server \\
-        --host 0.0.0.0 --port 8000 --output both --path runs/hts.jsonl
+        --host 0.0.0.0 --port 8000 --output frames_all --path logs/hts.jsonl
 """
 
 from __future__ import annotations
@@ -15,6 +15,7 @@ from typing import Any
 
 from hand_tracking_sdk import (
     HandFrame,
+    HeadFrame,
     HeadPosePacket,
     HTSClient,
     HTSClientConfig,
@@ -57,11 +58,18 @@ def _parse_args() -> argparse.Namespace:
 
 
 def _event_to_dict(
-    event: HandFrame | WristPacket | LandmarksPacket | HeadPosePacket,
+    event: HandFrame | HeadFrame | WristPacket | LandmarksPacket | HeadPosePacket,
 ) -> dict[str, Any]:
     if isinstance(event, HandFrame):
         return {
             "event_type": "frame",
+            "logged_at_unix_ns": time_ns(),
+            "data": event.to_dict(),
+        }
+    if isinstance(event, HeadFrame):
+        return {
+            "event_type": "frame",
+            "frame_type": "head",
             "logged_at_unix_ns": time_ns(),
             "data": event.to_dict(),
         }

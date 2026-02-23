@@ -136,7 +136,7 @@ This service exposes:
 
 Key controls:
 - transport mode: `udp`, `tcp_server`, `tcp_client`
-- output mode: `packets`, `frames`, `both`
+- output mode: `packets`, `frames`, `frames_all`, `both`
 - hand filter: `left`, `right`, `both`
 - parse error policy: `strict` (raise) or `tolerant` (skip malformed lines)
 
@@ -174,6 +174,7 @@ The SDK validates packet labels, hand side, and exact value counts.
 - Frame assembly:
   - `HandFrameAssembler`
   - emits a frame only when both wrist and landmarks are available
+  - optional `HeadFrame` emission in `frames_all` mode
 - Coordinate conversion:
   - `unity_left_to_right_position`
   - `unity_left_to_right_quaternion`
@@ -240,6 +241,12 @@ index_points = frame.get_finger("index")
 # returns dict[JointName, tuple[float, float, float]]
 # keys include JointName.INDEX_PROXIMAL, JointName.INDEX_TIP, ...
 ```
+
+`frames_all` mode may also emit `HeadFrame` events with consistent metadata:
+- `side=Head`
+- `frame_id`
+- `head` pose (`x, y, z, qx, qy, qz, qw`)
+- `sequence_id`, `recv_ts_ns`, `recv_time_unix_ns`, `source_ts_ns`, `source_frame_seq`
 
 ## Examples
 

@@ -15,7 +15,7 @@ from hand_tracking_sdk.convert import (
     convert_wrist_pose_unity_left_to_right,
     unity_right_to_flu_position,
 )
-from hand_tracking_sdk.frame import HandFrame
+from hand_tracking_sdk.frame import HandFrame, HeadFrame
 from hand_tracking_sdk.models import HandSide, LandmarksPacket, ParsedPacket, WristPacket, WristPose
 
 from .exceptions import VisualizationDependencyError
@@ -176,7 +176,7 @@ class RerunVisualizer:
         if self._config.show_jitter_panel:
             self._log_jitter_metrics(visual_frame)
 
-    def log_event(self, event: ParsedPacket | HandFrame) -> None:
+    def log_event(self, event: ParsedPacket | HandFrame | HeadFrame) -> None:
         """Log either packet or frame event.
 
         :param event:
@@ -184,6 +184,14 @@ class RerunVisualizer:
         """
         if isinstance(event, HandFrame):
             self.log_frame(event)
+            return
+        if isinstance(event, HeadFrame):
+            self._log_points(
+                f"frames/{event.frame_id}/head",
+                [(event.head.x, event.head.y, event.head.z)],
+                radius=self._config.wrist_radius,
+                color=self._config.wrist_color,
+            )
             return
         self.log_packet(event)
 

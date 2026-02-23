@@ -35,7 +35,7 @@ from hand_tracking_sdk.exceptions import (
     VisualizationDependencyError,
     VisualizationError,
 )
-from hand_tracking_sdk.frame import HandFrame, HandFrameAssembler
+from hand_tracking_sdk.frame import HandFrame, HandFrameAssembler, HeadFrame
 from hand_tracking_sdk.models import (
     FingerName,
     HandLandmarks,
@@ -88,6 +88,7 @@ __all__ = [
     "HandFilter",
     "HandFrame",
     "HandFrameAssembler",
+    "HeadFrame",
     "HandSide",
     "LandmarksPacket",
     "LogEventKind",

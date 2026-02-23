@@ -21,3 +21,6 @@ dist/
 
 # Sphinx docs build artifacts
 docs/_build/
+
+# Logs
+logs/

@@ -151,3 +151,19 @@ def test_head_pose_packet_is_ignored_by_frame_assembly() -> None:
     frame = assembler.push_line("Head pose:, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0")
 
     assert frame is None
+
+
+def test_head_pose_packet_emits_head_frame_when_enabled() -> None:
+    assembler = HandFrameAssembler(include_head_frames=True)
+
+    frame = assembler.push_line(
+        "Head pose | f = 3 | t = 456:, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0",
+        recv_ts_ns=33,
+        recv_time_unix_ns=44,
+    )
+
+    assert frame is not None
+    assert frame.side == HandSide.HEAD
+    assert frame.sequence_id == 0
+    assert frame.source_frame_seq == 3
+    assert frame.source_ts_ns == 456
