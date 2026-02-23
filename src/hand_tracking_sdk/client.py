@@ -38,7 +38,6 @@ class StreamOutput(StrEnum):
 
     PACKETS = "packets"
     FRAMES = "frames"
-    FRAMES_ALL = "frames_all"
     BOTH = "both"
 
 
@@ -194,7 +193,7 @@ class HTSClient:
         self._receiver_factory = receiver_factory
         self._frame_assembler = HandFrameAssembler(
             include_wall_time=config.include_wall_time,
-            include_head_frames=config.output == StreamOutput.FRAMES_ALL,
+            include_head_frames=config.output in (StreamOutput.FRAMES, StreamOutput.BOTH),
         )
         self._stats = ClientStats()
 
@@ -247,11 +246,7 @@ class HTSClient:
                     )
                     yield packet
 
-                if self._config.output in (
-                    StreamOutput.FRAMES,
-                    StreamOutput.FRAMES_ALL,
-                    StreamOutput.BOTH,
-                ):
+                if self._config.output in (StreamOutput.FRAMES, StreamOutput.BOTH):
                     frame = self._frame_assembler.push_packet(packet)
                     if frame is not None:
                         self._stats = self._stats_with(

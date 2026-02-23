@@ -2,7 +2,7 @@
 
 Example:
     uv run python examples/log_to_jsonl.py --transport tcp_server \\
-        --host 0.0.0.0 --port 8000 --output frames_all --path logs/hts.jsonl
+        --host 0.0.0.0 --port 8000 --output frames --path logs/hts.jsonl
 """
 
 from __future__ import annotations

@@ -30,9 +30,9 @@ def _parse_args() -> argparse.Namespace:
     parser.add_argument("--timeout", type=float, default=1.0, help="I/O timeout in seconds.")
     parser.add_argument(
         "--output",
-        choices=(StreamOutput.FRAMES.value, StreamOutput.FRAMES_ALL.value),
+        choices=(StreamOutput.FRAMES.value,),
         default=StreamOutput.FRAMES.value,
-        help="Frame output mode. Use frames_all to include optional head frames.",
+        help="Frame output mode. Includes optional head frames when available.",
     )
     parser.add_argument(
         "--max-frames",

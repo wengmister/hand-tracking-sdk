@@ -13,10 +13,18 @@ from hand_tracking_sdk.convert import (
     convert_hand_frame_unity_left_to_right,
     convert_landmarks_unity_left_to_right,
     convert_wrist_pose_unity_left_to_right,
+    unity_left_to_right_position,
     unity_right_to_flu_position,
 )
 from hand_tracking_sdk.frame import HandFrame, HeadFrame
-from hand_tracking_sdk.models import HandSide, LandmarksPacket, ParsedPacket, WristPacket, WristPose
+from hand_tracking_sdk.models import (
+    HandSide,
+    HeadPosePacket,
+    LandmarksPacket,
+    ParsedPacket,
+    WristPacket,
+    WristPose,
+)
 
 from .exceptions import VisualizationDependencyError
 
@@ -145,6 +153,18 @@ class RerunVisualizer:
                 radius=self._config.landmark_radius,
                 color=self._landmark_color(packet.side),
             )
+            return
+
+        if isinstance(packet, HeadPosePacket):
+            hx, hy, hz = packet.data.x, packet.data.y, packet.data.z
+            if self._config.convert_to_right_handed:
+                hx, hy, hz = unity_left_to_right_position(x=hx, y=hy, z=hz)
+            self._log_points(
+                "head/pose",
+                [(hx, hy, hz)],
+                radius=self._config.wrist_radius,
+                color=self._config.wrist_color,
+            )
 
     def log_frame(self, frame: HandFrame) -> None:
         """Log one assembled frame to Rerun.
@@ -186,9 +206,12 @@ class RerunVisualizer:
             self.log_frame(event)
             return
         if isinstance(event, HeadFrame):
+            hx, hy, hz = event.head.x, event.head.y, event.head.z
+            if self._config.convert_to_right_handed:
+                hx, hy, hz = unity_left_to_right_position(x=hx, y=hy, z=hz)
             self._log_points(
                 f"frames/{event.frame_id}/head",
-                [(event.head.x, event.head.y, event.head.z)],
+                [(hx, hy, hz)],
                 radius=self._config.wrist_radius,
                 color=self._config.wrist_color,
             )

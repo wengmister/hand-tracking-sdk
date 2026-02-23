@@ -3,6 +3,10 @@
 Example:
     uv run --with rerun-sdk python examples/visualize_rerun.py \\
         --transport tcp_server --host 0.0.0.0 --port 8000
+
+To include optional head frame visualization:
+    uv run --with rerun-sdk python examples/visualize_rerun.py \\
+        --transport tcp_server --host 0.0.0.0 --port 8000 --output frames
 """
 
 from __future__ import annotations
@@ -95,7 +99,7 @@ def _main() -> int:
     visualizer = RerunVisualizer(
         RerunVisualizerConfig(
             application_id=args.application_id,
-            show_jitter_panel=args.show_jitter_panel,
+            show_jitter_panel=args.show_jitter,
             jitter_window_size=args.jitter_window_size,
         )
     )

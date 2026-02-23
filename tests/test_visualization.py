@@ -8,6 +8,9 @@ from hand_tracking_sdk import (
     HandFrame,
     HandLandmarks,
     HandSide,
+    HeadFrame,
+    HeadPose,
+    HeadPosePacket,
     LandmarksPacket,
     PacketType,
     RerunVisualizer,
@@ -122,12 +125,32 @@ def test_rerun_visualizer_logs_packet_and_frame(monkeypatch: pytest.MonkeyPatch)
     visualizer.log_packet(packet)
     visualizer.log_packet(landmarks_packet)
     visualizer.log_frame(frame)
+    visualizer.log_packet(
+        HeadPosePacket(
+            side=HandSide.HEAD,
+            kind=PacketType.POSE,
+            data=HeadPose(x=1.0, y=2.0, z=3.0, qx=0.0, qy=0.0, qz=0.0, qw=1.0),
+        )
+    )
+    visualizer.log_event(
+        HeadFrame(
+            side=HandSide.HEAD,
+            frame_id="head_link",
+            head=HeadPose(x=1.0, y=2.0, z=3.0, qx=0.0, qy=0.0, qz=0.0, qw=1.0),
+            sequence_id=0,
+            recv_ts_ns=100,
+            recv_time_unix_ns=200,
+            source_ts_ns=None,
+        )
+    )
 
     assert fake.inits == [("hts-test", False)]
     assert any(path == "hands/left/wrist" for path, _ in fake.logs)
     assert any(path == "hands/left/landmarks" for path, _ in fake.logs)
     assert any(path == "frames/left_hand_link/wrist" for path, _ in fake.logs)
     assert any(path == "frames/left_hand_link/landmarks" for path, _ in fake.logs)
+    assert any(path == "head/pose" for path, _ in fake.logs)
+    assert any(path == "frames/head_link/head" for path, _ in fake.logs)
 
 
 def test_landmarks_are_transformed_by_wrist_pose(monkeypatch: pytest.MonkeyPatch) -> None:

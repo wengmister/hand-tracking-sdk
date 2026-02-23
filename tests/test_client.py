@@ -82,9 +82,9 @@ def test_iter_events_packets_mode_includes_head_pose_packet() -> None:
     assert events[0].side == HandSide.HEAD
 
 
-def test_iter_events_frames_all_emits_head_frame() -> None:
+def test_iter_events_frames_emits_head_frame_when_present() -> None:
     lines = ["Head pose | f = 1 | t = 99:, 0.1, 1.2, -0.3, 0, 0, 0, 1"]
-    client = _make_client(HTSClientConfig(output=StreamOutput.FRAMES_ALL), lines)
+    client = _make_client(HTSClientConfig(output=StreamOutput.FRAMES), lines)
 
     events = list(client.iter_events())
 
