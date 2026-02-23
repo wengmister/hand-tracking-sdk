@@ -2,9 +2,10 @@
 
 from __future__ import annotations
 
+import asyncio
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
-from time import monotonic_ns
+from time import monotonic, monotonic_ns
 from typing import Any
 
 
@@ -126,4 +127,87 @@ class WebcamSourceAdapter(VideoSourceAdapter):
         if not ok:
             raise RuntimeError("Failed to read webcam frame.")
         frame_rgb = cv2.cvtColor(frame_bgr, cv2.COLOR_BGR2RGB)
+        return av.VideoFrame.from_ndarray(frame_rgb, format="rgb24")
+
+
+class MujocoSourceAdapter(VideoSourceAdapter):
+    """MuJoCo offscreen renderer source adapter."""
+
+    def __init__(
+        self,
+        *,
+        model_path: str,
+        camera: str | None = None,
+        width: int = 1280,
+        height: int = 720,
+        fps: int = 30,
+    ) -> None:
+        self._format = VideoFormat(width=width, height=height, fps=fps)
+        self._model_path = model_path
+        self._camera = camera
+        self._camera_arg: Any = camera
+        self._mujoco: Any = None
+        self._model: Any = None
+        self._data: Any = None
+        self._renderer: Any = None
+        self._last_frame_ts = 0.0
+
+    async def start(self) -> None:
+        try:
+            import mujoco
+        except Exception as exc:
+            raise RuntimeError(
+                "mujoco is required for sim source. "
+                "Install with: pip install hand-tracking-sdk[sim]"
+            ) from exc
+
+        self._mujoco = mujoco
+        self._model = mujoco.MjModel.from_xml_path(self._model_path)
+        self._data = mujoco.MjData(self._model)
+        self._renderer = mujoco.Renderer(
+            self._model,
+            width=self._format.width,
+            height=self._format.height,
+        )
+        if self._camera is not None and self._camera.isdigit():
+            self._camera_arg = int(self._camera)
+        mujoco.mj_forward(self._model, self._data)
+        self._last_frame_ts = monotonic()
+
+    async def stop(self) -> None:
+        if self._renderer is not None:
+            close_fn = getattr(self._renderer, "close", None)
+            if callable(close_fn):
+                close_fn()
+        self._renderer = None
+        self._data = None
+        self._model = None
+        self._mujoco = None
+
+    def get_format(self) -> VideoFormat:
+        return self._format
+
+    async def next_frame(self) -> Any:
+        import av
+
+        if (
+            self._mujoco is None
+            or self._model is None
+            or self._data is None
+            or self._renderer is None
+        ):
+            raise RuntimeError("MuJoCo source not started.")
+
+        # Basic frame pacing to target FPS.
+        frame_interval_s = 1.0 / max(1, self._format.fps)
+        now = monotonic()
+        sleep_s = frame_interval_s - (now - self._last_frame_ts)
+        if sleep_s > 0:
+            await asyncio.sleep(sleep_s)
+        self._last_frame_ts = monotonic()
+
+        # Step one simulation tick and render from configured camera.
+        self._mujoco.mj_step(self._model, self._data)
+        self._renderer.update_scene(self._data, camera=self._camera_arg)
+        frame_rgb = self._renderer.render()
         return av.VideoFrame.from_ndarray(frame_rgb, format="rgb24")

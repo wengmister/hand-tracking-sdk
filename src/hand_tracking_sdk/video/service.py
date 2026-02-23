@@ -10,6 +10,7 @@ from typing import Any
 from hand_tracking_sdk.video.schemas import SignalingMessage, make_signaling_message
 from hand_tracking_sdk.video.signaling import SignalingConnection, VideoSignalingServer
 from hand_tracking_sdk.video.sources import (
+    MujocoSourceAdapter,
     TestPatternSourceAdapter,
     VideoSourceAdapter,
     WebcamSourceAdapter,
@@ -26,6 +27,8 @@ class VideoServiceConfig:
     source: str = "test"
     preset: str = "720p30"
     webcam_index: int = 0
+    mj_model_path: str | None = None
+    mj_camera: str | None = None
     stats_interval_s: float = 1.0
     server_version: str = "0.1.0"
     verbose: bool = False
@@ -334,6 +337,16 @@ class VideoService:
 
     def _build_source(self) -> VideoSourceAdapter:
         width, height, fps = self._parse_preset(self._config.preset)
+        if self._config.source == "mujoco":
+            if not self._config.mj_model_path:
+                raise ValueError("mujoco source requires mj_model_path (--mj-model).")
+            return MujocoSourceAdapter(
+                model_path=self._config.mj_model_path,
+                camera=self._config.mj_camera,
+                width=width,
+                height=height,
+                fps=fps,
+            )
         if self._config.source == "webcam":
             return WebcamSourceAdapter(
                 device_index=self._config.webcam_index,
