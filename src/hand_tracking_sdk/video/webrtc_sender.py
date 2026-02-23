@@ -50,6 +50,7 @@ class VideoWebRTCSender:
         source: VideoSourceAdapter,
         on_local_ice_candidate: Callable[[dict[str, Any]], Awaitable[None]] | None = None,
     ) -> None:
+        """Initialize sender with a frame source and optional ICE callback."""
         self._source = source
         self._on_local_ice_candidate = on_local_ice_candidate
         self._pc: Any = None
@@ -61,12 +62,14 @@ class VideoWebRTCSender:
         self._h264_forced = False
 
     async def start(self) -> None:
+        """Start the source and create the outbound peer/video track."""
         await self._source.start()
         self._pc = self._new_peer_connection()
         self._add_video_track()
         self._wire_ice_callbacks()
 
     async def stop(self) -> None:
+        """Stop peer connection and release source resources."""
         if self._pc is not None:
             await self._pc.close()
             self._pc = None
@@ -77,8 +80,8 @@ class VideoWebRTCSender:
         if self._pc is None:
             raise RuntimeError("Video sender not started.")
 
-        RTCSessionDescription = self._import_aiortc_symbol("RTCSessionDescription")
-        offer = RTCSessionDescription(sdp=sdp_offer, type="offer")
+        rtc_session_description = self._import_aiortc_symbol("RTCSessionDescription")
+        offer = rtc_session_description(sdp=sdp_offer, type="offer")
         await self._pc.setRemoteDescription(offer)
         self._force_h264_codec_if_possible()
         answer = await self._pc.createAnswer()
@@ -141,16 +144,16 @@ class VideoWebRTCSender:
             )
 
     def _new_peer_connection(self) -> Any:
-        RTCPeerConnection = self._import_aiortc_symbol("RTCPeerConnection")
-        return RTCPeerConnection()
+        rtc_peer_connection = self._import_aiortc_symbol("RTCPeerConnection")
+        return rtc_peer_connection()
 
     def _add_video_track(self) -> None:
         if self._pc is None:
             raise RuntimeError("Peer connection not created.")
 
-        VideoStreamTrack = self._import_aiortc_symbol("VideoStreamTrack")
+        video_stream_track = self._import_aiortc_symbol("VideoStreamTrack")
 
-        class AdapterTrack(VideoStreamTrack):
+        class AdapterTrack(video_stream_track):
             def __init__(self, adapter: _AdapterVideoTrack, sender: VideoWebRTCSender) -> None:
                 super().__init__()
                 self._adapter = adapter
@@ -187,8 +190,8 @@ class VideoWebRTCSender:
         if self._pc is None:
             return
         try:
-            RTCRtpSender = self._import_aiortc_symbol("RTCRtpSender")
-            capabilities = RTCRtpSender.getCapabilities("video")
+            rtc_rtp_sender = self._import_aiortc_symbol("RTCRtpSender")
+            capabilities = rtc_rtp_sender.getCapabilities("video")
             codecs = [
                 codec
                 for codec in getattr(capabilities, "codecs", [])
@@ -209,7 +212,8 @@ class VideoWebRTCSender:
             return getattr(module, symbol)
         except Exception as exc:
             raise RuntimeError(
-                "aiortc is required for video streaming. Install with: pip install hand-tracking-sdk[video]"
+                "aiortc is required for video streaming. "
+                "Install with: pip install hand-tracking-sdk[video]"
             ) from exc
 
     def _import_aiortc_sdp_symbol(self, symbol: str) -> Any:

@@ -30,6 +30,7 @@ class VideoSignalingServer:
         on_connect: Callable[[SignalingConnection], Awaitable[None]] | None = None,
         on_disconnect: Callable[[SignalingConnection], Awaitable[None]] | None = None,
     ) -> None:
+        """Create a signaling server with message and lifecycle callbacks."""
         self._host = host
         self._port = port
         self._on_message = on_message
@@ -106,5 +107,6 @@ class VideoSignalingServer:
             return __import__("websockets", fromlist=["serve"])
         except Exception as exc:
             raise RuntimeError(
-                "websockets is required for video signaling. Install with: pip install hand-tracking-sdk[video]"
+                "websockets is required for video signaling. "
+                "Install with: pip install hand-tracking-sdk[video]"
             ) from exc

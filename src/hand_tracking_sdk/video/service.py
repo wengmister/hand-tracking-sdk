@@ -41,6 +41,7 @@ class VideoService:
         *,
         sender_factory: Callable[[VideoSourceAdapter, str, int], VideoWebRTCSender] | None = None,
     ) -> None:
+        """Initialize service dependencies and runtime state."""
         self._config = config or VideoServiceConfig()
         self._sender_factory = sender_factory or self._default_sender_factory
         self._signaling = VideoSignalingServer(
@@ -59,7 +60,9 @@ class VideoService:
         """Start signaling server."""
         await self._signaling.start()
         self._log(
-            f"signaling server listening host={self._config.signaling_host} port={self._config.signaling_port}"
+            "signaling server listening "
+            f"host={self._config.signaling_host} "
+            f"port={self._config.signaling_port}"
         )
 
     async def stop(self) -> None:
@@ -124,16 +127,28 @@ class VideoService:
             make_signaling_message(
                 type="error",
                 session_id=session_id,
-                payload={"code": "unsupported_message", "message": f"Unsupported message: {message_type}"},
+                payload={
+                    "code": "unsupported_message",
+                    "message": f"Unsupported message: {message_type}",
+                },
             ),
         )
         self._log(f"unsupported message type={message_type} session={session_id}")
 
-    async def _handle_offer(self, connection: SignalingConnection, message: SignalingMessage) -> None:
+    async def _handle_offer(
+        self,
+        connection: SignalingConnection,
+        message: SignalingMessage,
+    ) -> None:
         session_id = message.session_id
         sdp = str(message.payload.get("sdp", ""))
         if not sdp:
-            await self._emit_error(connection, session_id, "missing_offer", "Offer payload missing 'sdp'.")
+            await self._emit_error(
+                connection,
+                session_id,
+                "missing_offer",
+                "Offer payload missing 'sdp'.",
+            )
             self._log(f"missing offer SDP session={session_id}")
             return
         if "m=video" not in sdp:
@@ -141,7 +156,8 @@ class VideoService:
                 connection,
                 session_id,
                 "invalid_offer",
-                "Offer missing m=video; Quest must create recv-only video transceiver before CreateOffer.",
+                "Offer missing m=video; Quest must create recv-only "
+                "video transceiver before CreateOffer.",
             )
             self._log(f"invalid offer (no m=video) session={session_id} sdp_len={len(sdp)}")
             return
@@ -150,9 +166,16 @@ class VideoService:
         if self._sender is None:
             try:
                 source = self._build_source()
-                self._sender = self._sender_factory(source, session_id, self._parse_fps(self._config.preset))
+                self._sender = self._sender_factory(
+                    source,
+                    session_id,
+                    self._parse_fps(self._config.preset),
+                )
                 await self._sender.start()
-                self._log(f"sender started source={self._config.source} preset={self._config.preset}")
+                self._log(
+                    f"sender started source={self._config.source} "
+                    f"preset={self._config.preset}"
+                )
             except Exception as exc:
                 await self._emit_error(connection, session_id, "sender_start_failed", str(exc))
                 await self._send_video_state(
@@ -168,14 +191,23 @@ class VideoService:
             answer_sdp = await self._sender.apply_offer(sdp_offer=sdp)
         except Exception as exc:
             await self._emit_error(connection, session_id, "offer_failed", str(exc))
-            await self._send_video_state(connection, session_id=session_id, state="error", reason="offer_failed")
+            await self._send_video_state(
+                connection,
+                session_id=session_id,
+                state="error",
+                reason="offer_failed",
+            )
             await self._stop_sender()
             self._log(f"offer handling failed session={session_id}: {exc}")
             return
 
         await self._signaling.send(
             connection,
-            make_signaling_message(type="answer", session_id=session_id, payload={"sdp": answer_sdp}),
+            make_signaling_message(
+                type="answer",
+                session_id=session_id,
+                payload={"sdp": answer_sdp},
+            ),
         )
         self._log(f"answer sent session={session_id} sdp_len={len(answer_sdp)}")
         await self._send_video_state(connection, session_id=session_id, state="playing")
@@ -222,7 +254,11 @@ class VideoService:
     async def _stats_loop(self) -> None:
         while True:
             await asyncio.sleep(self._config.stats_interval_s)
-            if self._sender is None or self._active_connection is None or self._active_session_id is None:
+            if (
+                self._sender is None
+                or self._active_connection is None
+                or self._active_session_id is None
+            ):
                 continue
 
             try:
