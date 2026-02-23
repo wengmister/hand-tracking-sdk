@@ -15,6 +15,7 @@ class HandSide(StrEnum):
 
     LEFT = "Left"
     RIGHT = "Right"
+    HEAD = "Head"
 
 
 class PacketType(StrEnum):
@@ -22,6 +23,7 @@ class PacketType(StrEnum):
 
     WRIST = "wrist"
     LANDMARKS = "landmarks"
+    POSE = "pose"
 
 
 class JointName(StrEnum):
@@ -111,6 +113,44 @@ class WristPose:
         :returns:
             Parsed wrist pose instance.
         """
+        return cls(
+            x=float(values["x"]),
+            y=float(values["y"]),
+            z=float(values["z"]),
+            qx=float(values["qx"]),
+            qy=float(values["qy"]),
+            qz=float(values["qz"]),
+            qw=float(values["qw"]),
+        )
+
+
+@dataclass(frozen=True, slots=True)
+class HeadPose:
+    """Cartesian head position and orientation quaternion."""
+
+    x: float
+    y: float
+    z: float
+    qx: float
+    qy: float
+    qz: float
+    qw: float
+
+    def to_dict(self) -> dict[str, float]:
+        """Serialize head pose into a mapping-friendly dictionary."""
+        return {
+            "x": self.x,
+            "y": self.y,
+            "z": self.z,
+            "qx": self.qx,
+            "qy": self.qy,
+            "qz": self.qz,
+            "qw": self.qw,
+        }
+
+    @classmethod
+    def from_dict(cls, values: Mapping[str, Any]) -> HeadPose:
+        """Build :class:`HeadPose` from serialized mapping data."""
         return cls(
             x=float(values["x"]),
             y=float(values["y"]),
@@ -227,4 +267,14 @@ class LandmarksPacket:
     debug: PacketDebugInfo | None = None
 
 
-ParsedPacket = WristPacket | LandmarksPacket
+@dataclass(frozen=True, slots=True)
+class HeadPosePacket:
+    """Parsed head pose packet."""
+
+    side: HandSide
+    kind: PacketType
+    data: HeadPose
+    debug: PacketDebugInfo | None = None
+
+
+ParsedPacket = WristPacket | LandmarksPacket | HeadPosePacket

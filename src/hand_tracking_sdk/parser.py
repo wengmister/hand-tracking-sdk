@@ -7,6 +7,8 @@ from hand_tracking_sdk.exceptions import ParseError
 from hand_tracking_sdk.models import (
     HandLandmarks,
     HandSide,
+    HeadPose,
+    HeadPosePacket,
     LandmarksPacket,
     PacketDebugInfo,
     PacketType,
@@ -21,7 +23,7 @@ def parse_line(line: str) -> ParsedPacket:
 
     The input line must use one of the supported labels:
     ``Left wrist:``, ``Right wrist:``, ``Left landmarks:``, or
-    ``Right landmarks:``.
+    ``Right landmarks:``, or ``Head pose:``.
 
     :param line:
         Raw UTF-8 decoded line from HTS transport.
@@ -47,6 +49,8 @@ def parse_line(line: str) -> ParsedPacket:
     side, kind = _parse_label(label)
     if kind == PacketType.WRIST:
         return _parse_wrist(side=side, values=payload, debug=debug_info)
+    if kind == PacketType.POSE:
+        return _parse_pose(side=side, values=payload, debug=debug_info)
     return _parse_landmarks(side=side, values=payload, debug=debug_info)
 
 
@@ -115,6 +119,8 @@ def _parse_label(label: str) -> tuple[HandSide, PacketType]:
         return side, PacketType.WRIST
     if normalized_kind == PacketType.LANDMARKS.value:
         return side, PacketType.LANDMARKS
+    if normalized_kind == PacketType.POSE.value:
+        return side, PacketType.POSE
     raise ParseError(f"Unsupported packet type: {kind_raw!r}")
 
 
@@ -156,6 +162,19 @@ def _parse_wrist(
 
     pose = WristPose(*values)
     return WristPacket(side=side, kind=PacketType.WRIST, data=pose, debug=debug)
+
+
+def _parse_pose(
+    side: HandSide,
+    values: list[float],
+    debug: PacketDebugInfo | None,
+) -> HeadPosePacket:
+    """Validate and map head pose values into a typed packet."""
+    if len(values) != WRIST_VALUE_COUNT:
+        raise ParseError(f"Pose packet must contain {WRIST_VALUE_COUNT} values, got {len(values)}")
+
+    pose = HeadPose(*values)
+    return HeadPosePacket(side=side, kind=PacketType.POSE, data=pose, debug=debug)
 
 
 def _parse_landmarks(

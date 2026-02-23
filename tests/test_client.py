@@ -9,6 +9,7 @@ from hand_tracking_sdk import (
     HandFilter,
     HandFrame,
     HandSide,
+    HeadPosePacket,
     HTSClient,
     HTSClientConfig,
     LandmarksPacket,
@@ -67,6 +68,17 @@ def test_iter_events_packets_mode_emits_packets_only() -> None:
     assert len(events) == 2
     assert isinstance(events[0], WristPacket)
     assert isinstance(events[1], LandmarksPacket)
+
+
+def test_iter_events_packets_mode_includes_head_pose_packet() -> None:
+    lines = ["Head pose:, 0.1, 1.2, -0.3, 0, 0, 0, 1"]
+    client = _make_client(HTSClientConfig(output=StreamOutput.PACKETS), lines)
+
+    events = list(client.iter_events())
+
+    assert len(events) == 1
+    assert isinstance(events[0], HeadPosePacket)
+    assert events[0].side == HandSide.HEAD
 
 
 def test_iter_events_both_mode_emits_packets_and_frames() -> None:

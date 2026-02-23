@@ -143,3 +143,11 @@ def test_frame_uses_source_debug_metadata_when_available() -> None:
     assert frame is not None
     assert frame.source_ts_ns == 1000
     assert frame.source_frame_seq == 7
+
+
+def test_head_pose_packet_is_ignored_by_frame_assembly() -> None:
+    assembler = HandFrameAssembler()
+
+    frame = assembler.push_line("Head pose:, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0")
+
+    assert frame is None

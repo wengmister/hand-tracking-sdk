@@ -2,6 +2,7 @@ import pytest
 
 from hand_tracking_sdk import (
     HandSide,
+    HeadPosePacket,
     LandmarksPacket,
     PacketType,
     ParseError,
@@ -47,6 +48,24 @@ def test_parse_debug_metadata_from_label() -> None:
     assert packet.debug is not None
     assert packet.debug.source_frame_seq == 123
     assert packet.debug.source_ts_ns == 987654321
+
+
+def test_parse_head_pose_packet() -> None:
+    packet = parse_line("Head pose:, 0.1, 1.2, -0.3, 0.0, 0.1, 0.2, 0.9")
+
+    assert isinstance(packet, HeadPosePacket)
+    assert packet.side == HandSide.HEAD
+    assert packet.kind == PacketType.POSE
+    assert packet.data.y == 1.2
+
+
+def test_parse_head_pose_with_debug_metadata() -> None:
+    packet = parse_line("Head pose | f = 5 | t = 12345:, 0, 0, 0, 0, 0, 0, 1")
+
+    assert isinstance(packet, HeadPosePacket)
+    assert packet.debug is not None
+    assert packet.debug.source_frame_seq == 5
+    assert packet.debug.source_ts_ns == 12345
 
 
 @pytest.mark.parametrize(

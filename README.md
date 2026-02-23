@@ -8,6 +8,7 @@ HTS streams UTF-8 CSV lines for wrist pose and hand landmarks.
 This SDK provides typed parsing and validation for:
 - wrist packets: 7 floats (`x, y, z, qx, qy, qz, qw`)
 - landmark packets: 63 floats (`21 x [x, y, z]`)
+- optional head pose packets: 7 floats (`x, y, z, qx, qy, qz, qw`)
 
 Streamed joints are in Mediapipe-style 21 landmark points.
 
@@ -31,6 +32,7 @@ Network timeout and disconnect behavior is reported through typed exceptions:
 Use `HandFrameAssembler` to combine wrist and landmark packets into coherent per-hand frames.
 
 - Emits a frame only after both components are present for a hand.
+- Head pose packets are parsed but intentionally excluded from hand frame assembly.
 - Ignores stale out-of-order updates (older receive timestamps).
 - Increments `sequence_id` per hand side on each newly emitted frame.
 - Supports:
@@ -156,6 +158,10 @@ for event in client.iter_events():
 HTS emits UTF-8 CSV lines:
 - wrist packet: 7 floats (`x, y, z, qx, qy, qz, qw`)
 - landmarks packet: 63 floats (`21 x [x, y, z]`)
+- optional head pose packet: 7 floats (`x, y, z, qx, qy, qz, qw`)
+
+Head pose data is optional and appears only when the sender enables head tracking.
+Hand-only streams (wrist + landmarks) remain fully supported.
 
 The SDK validates packet labels, hand side, and exact value counts.
 
@@ -242,8 +248,10 @@ index_points = frame.get_finger("index")
   - `uv run python examples/visualize_rerun.py --transport tcp_server --host 0.0.0.0 --port 8000`
 - Frame-only stream:
   - `uv run python examples/stream_frames.py --transport tcp_server --host 0.0.0.0 --port 8000`
+  - frame mode intentionally emits hand frames only (head pose packets are ignored by frame assembly)
 - JSONL logging:
   - `uv run python examples/log_to_jsonl.py --transport tcp_server --host 0.0.0.0 --port 8000 --output both --path runs/hand_tracking.jsonl`
+  - packets mode now includes `packet_type=head_pose` when present
 
 ## Protocol and Docs
 

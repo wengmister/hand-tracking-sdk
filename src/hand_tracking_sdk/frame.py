@@ -223,6 +223,10 @@ class HandFrameAssembler:
         :returns:
             A newly assembled frame or ``None`` if frame is incomplete/unchanged.
         """
+        if not isinstance(packet, (WristPacket, LandmarksPacket)):
+            # Non-hand packet types are intentionally excluded from hand frame assembly.
+            return None
+
         recv_ts_ns_value, recv_time_unix_ns_value = self._resolve_timestamps(
             recv_ts_ns=recv_ts_ns,
             recv_time_unix_ns=recv_time_unix_ns,
