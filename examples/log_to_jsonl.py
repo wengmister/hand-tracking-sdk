@@ -139,15 +139,21 @@ def _main() -> int:
     )
 
     written = 0
+    interrupted = False
     with path.open("w", encoding="utf-8") as handle:
-        for event in client.iter_events():
-            payload = _event_to_dict(event)
-            handle.write(json.dumps(payload, separators=(",", ":")) + "\n")
-            written += 1
-            if max_events is not None and written >= max_events:
-                break
+        try:
+            for event in client.iter_events():
+                payload = _event_to_dict(event)
+                handle.write(json.dumps(payload, separators=(",", ":")) + "\n")
+                written += 1
+                if max_events is not None and written >= max_events:
+                    break
+        except KeyboardInterrupt:
+            interrupted = True
 
     stats = client.get_stats()
+    if interrupted:
+        print("stopped (keyboard interrupt)")
     print(
         f"wrote {written} event(s) to {path}"
         f" frames_emitted={stats.frames_emitted}"
