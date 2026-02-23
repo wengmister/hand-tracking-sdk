@@ -15,6 +15,7 @@ from typing import Any
 
 from hand_tracking_sdk import (
     HandFrame,
+    HeadPosePacket,
     HTSClient,
     HTSClientConfig,
     LandmarksPacket,
@@ -55,7 +56,9 @@ def _parse_args() -> argparse.Namespace:
     return parser.parse_args()
 
 
-def _event_to_dict(event: HandFrame | WristPacket | LandmarksPacket) -> dict[str, Any]:
+def _event_to_dict(
+    event: HandFrame | WristPacket | LandmarksPacket | HeadPosePacket,
+) -> dict[str, Any]:
     if isinstance(event, HandFrame):
         return {
             "event_type": "frame",
@@ -66,6 +69,22 @@ def _event_to_dict(event: HandFrame | WristPacket | LandmarksPacket) -> dict[str
         return {
             "event_type": "packet",
             "packet_type": "wrist",
+            "side": event.side.value,
+            "logged_at_unix_ns": time_ns(),
+            "debug": (
+                None
+                if event.debug is None
+                else {
+                    "source_frame_seq": event.debug.source_frame_seq,
+                    "source_ts_ns": event.debug.source_ts_ns,
+                }
+            ),
+            "data": event.data.to_dict(),
+        }
+    if isinstance(event, HeadPosePacket):
+        return {
+            "event_type": "packet",
+            "packet_type": "head_pose",
             "side": event.side.value,
             "logged_at_unix_ns": time_ns(),
             "debug": (
