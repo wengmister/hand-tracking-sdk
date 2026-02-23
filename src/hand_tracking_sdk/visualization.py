@@ -69,6 +69,10 @@ class RerunVisualizerConfig:
         If ``True``, log jitter/drop scalar metrics under ``metrics/jitter/...``.
     :param jitter_window_size:
         Rolling window size for jitter percentile metrics.
+    :param show_coordinate_frames:
+        If ``True``, render local XYZ axes for wrist/head poses.
+    :param coordinate_frame_axis_length:
+        Axis length in meters for rendered coordinate frames.
     """
 
     application_id: str = "hand-tracking-sdk"
@@ -84,6 +88,8 @@ class RerunVisualizerConfig:
     visualization_frame: VisualizationFrame = VisualizationFrame.FLU
     show_jitter_panel: bool = False
     jitter_window_size: int = 200
+    show_coordinate_frames: bool = False
+    coordinate_frame_axis_length: float = 0.08
 
 
 @dataclass(slots=True)
@@ -136,6 +142,12 @@ class RerunVisualizer:
                 radius=self._config.wrist_radius,
                 color=self._config.wrist_color,
             )
+            if self._config.show_coordinate_frames:
+                self._log_pose_axes(
+                    f"{side_path}/frame_axes",
+                    position=(pose.x, pose.y, pose.z),
+                    quaternion=(pose.qx, pose.qy, pose.qz, pose.qw),
+                )
             return
 
         if isinstance(packet, LandmarksPacket):
@@ -157,14 +169,23 @@ class RerunVisualizer:
 
         if isinstance(packet, HeadPosePacket):
             hx, hy, hz = packet.data.x, packet.data.y, packet.data.z
+            hqx, hqy, hqz, hqw = packet.data.qx, packet.data.qy, packet.data.qz, packet.data.qw
             if self._config.convert_to_right_handed:
                 hx, hy, hz = unity_left_to_right_position(x=hx, y=hy, z=hz)
+                converted = convert_wrist_pose_unity_left_to_right(packet.data)
+                hqx, hqy, hqz, hqw = converted.qx, converted.qy, converted.qz, converted.qw
             self._log_points(
                 "head/pose",
                 [(hx, hy, hz)],
                 radius=self._config.wrist_radius,
                 color=self._config.wrist_color,
             )
+            if self._config.show_coordinate_frames:
+                self._log_pose_axes(
+                    "head/frame_axes",
+                    position=(hx, hy, hz),
+                    quaternion=(hqx, hqy, hqz, hqw),
+                )
 
     def log_frame(self, frame: HandFrame) -> None:
         """Log one assembled frame to Rerun.
@@ -184,6 +205,17 @@ class RerunVisualizer:
             radius=self._config.wrist_radius,
             color=self._config.wrist_color,
         )
+        if self._config.show_coordinate_frames:
+            self._log_pose_axes(
+                f"{base}/frame_axes",
+                position=(visual_frame.wrist.x, visual_frame.wrist.y, visual_frame.wrist.z),
+                quaternion=(
+                    visual_frame.wrist.qx,
+                    visual_frame.wrist.qy,
+                    visual_frame.wrist.qz,
+                    visual_frame.wrist.qw,
+                ),
+            )
         points = visual_frame.landmarks.points
         if self._config.landmarks_are_wrist_relative:
             points = self._transform_landmarks_by_wrist(points=points, wrist=visual_frame.wrist)
@@ -207,16 +239,119 @@ class RerunVisualizer:
             return
         if isinstance(event, HeadFrame):
             hx, hy, hz = event.head.x, event.head.y, event.head.z
+            hqx, hqy, hqz, hqw = event.head.qx, event.head.qy, event.head.qz, event.head.qw
             if self._config.convert_to_right_handed:
                 hx, hy, hz = unity_left_to_right_position(x=hx, y=hy, z=hz)
+                converted = convert_wrist_pose_unity_left_to_right(event.head)
+                hqx, hqy, hqz, hqw = converted.qx, converted.qy, converted.qz, converted.qw
             self._log_points(
                 f"frames/{event.frame_id}/head",
                 [(hx, hy, hz)],
                 radius=self._config.wrist_radius,
                 color=self._config.wrist_color,
             )
+            if self._config.show_coordinate_frames:
+                self._log_pose_axes(
+                    f"frames/{event.frame_id}/frame_axes",
+                    position=(hx, hy, hz),
+                    quaternion=(hqx, hqy, hqz, hqw),
+                )
             return
         self.log_packet(event)
+
+    def _log_pose_axes(
+        self,
+        path: str,
+        *,
+        position: tuple[float, float, float],
+        quaternion: tuple[float, float, float, float],
+    ) -> None:
+        """Log XYZ axes for one pose with SDK-version compatibility.
+
+        :param path:
+            Entity path for axis geometry.
+        :param position:
+            Pose origin in SDK frame convention.
+        :param quaternion:
+            Pose orientation as ``(qx, qy, qz, qw)``.
+        """
+        px, py, pz = position
+        qx, qy, qz, qw = quaternion
+        axis_len = self._config.coordinate_frame_axis_length
+        local_axes = self._coordinate_axes_for_visualization(axis_len=axis_len)
+        axis_colors = ([255, 0, 0], [0, 255, 0], [0, 128, 255])
+        origin = self._map_point_frame(x=px, y=py, z=pz)
+
+        segments: list[list[list[float]]] = []
+        for ax, ay, az in local_axes:
+            rx, ry, rz = _rotate_vector_by_quaternion(
+                x=ax,
+                y=ay,
+                z=az,
+                qx=qx,
+                qy=qy,
+                qz=qz,
+                qw=qw,
+            )
+            endpoint = self._map_point_frame(x=px + rx, y=py + ry, z=pz + rz)
+            segments.append(
+                [
+                    [origin[0], origin[1], origin[2]],
+                    [endpoint[0], endpoint[1], endpoint[2]],
+                ]
+            )
+
+        if hasattr(self._rr, "LineStrips3D"):
+            try:
+                self._rr.log(
+                    path,
+                    self._rr.LineStrips3D(
+                        segments,
+                        colors=axis_colors,
+                    ),
+                )
+                return
+            except Exception:
+                pass
+
+        fallback_points = [point for segment in segments for point in segment]
+        fallback_colors = [
+            axis_colors[0],
+            axis_colors[0],
+            axis_colors[1],
+            axis_colors[1],
+            axis_colors[2],
+            axis_colors[2],
+        ]
+        self._rr.log(
+            path,
+            self._rr.Points3D(
+                fallback_points,
+                radii=[self._config.landmark_radius] * len(fallback_points),
+                colors=fallback_colors,
+            ),
+        )
+
+    def _coordinate_axes_for_visualization(
+        self, *, axis_len: float
+    ) -> tuple[tuple[float, float, float], tuple[float, float, float], tuple[float, float, float]]:
+        """Return local axis vectors so displayed axes match configured view basis.
+
+        In FLU mode, colors remain RGB while semantic directions become:
+        red=+X(forward), green=+Y(left), blue=+Z(up).
+        """
+        if self._config.visualization_frame == VisualizationFrame.FLU:
+            # Source (Unity-right) vectors that map to FLU +X/+Y/+Z after _map_point_frame.
+            return (
+                (0.0, 0.0, axis_len),   # FLU +X (forward)
+                (-axis_len, 0.0, 0.0),  # FLU +Y (left)
+                (0.0, -axis_len, 0.0),  # FLU +Z (up)
+            )
+        return (
+            (axis_len, 0.0, 0.0),
+            (0.0, axis_len, 0.0),
+            (0.0, 0.0, axis_len),
+        )
 
     def _log_points(
         self,

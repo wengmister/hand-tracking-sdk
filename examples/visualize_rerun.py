@@ -7,6 +7,10 @@ Example:
 To include optional head frame visualization:
     uv run --with rerun-sdk python examples/visualize_rerun.py \\
         --transport tcp_server --host 0.0.0.0 --port 8000 --output frames
+
+To render pose coordinate frames (head/wrist):
+    uv run --with rerun-sdk python examples/visualize_rerun.py \\
+        --transport tcp_server --host 0.0.0.0 --port 8000 --show-coordinate-frames
 """
 
 from __future__ import annotations
@@ -78,6 +82,12 @@ def _parse_args() -> argparse.Namespace:
         default=200,
         help="Rolling window size for jitter percentile metrics.",
     )
+    parser.add_argument(
+        "--show-coordinate-frames",
+        action="store_true",
+        default=False,
+        help="Render local XYZ frame axes for wrist and head poses.",
+    )
     return parser.parse_args()
 
 
@@ -101,6 +111,7 @@ def _main() -> int:
             application_id=args.application_id,
             show_jitter_panel=args.show_jitter,
             jitter_window_size=args.jitter_window_size,
+            show_coordinate_frames=args.show_coordinate_frames,
         )
     )
 

@@ -53,6 +53,16 @@ class _FakeRerun(ModuleType):
         def __init__(self, value: float) -> None:
             self.value = value
 
+    class LineStrips3D:
+        def __init__(
+            self,
+            strips: list[list[list[float]]],
+            *,
+            colors: list[list[int]] | None = None,
+        ) -> None:
+            self.strips = strips
+            self.colors = colors
+
 
 class _FakeBlueprint(ModuleType):
     class Spatial3DView:
@@ -153,6 +163,53 @@ def test_rerun_visualizer_logs_packet_and_frame(monkeypatch: pytest.MonkeyPatch)
     assert any(path == "frames/head_link/head" for path, _ in fake.logs)
 
 
+def test_coordinate_frames_are_logged_when_enabled(monkeypatch: pytest.MonkeyPatch) -> None:
+    fake = _FakeRerun()
+    fake_blueprint = _FakeBlueprint("rerun.blueprint")
+
+    def _import(module_name: str) -> ModuleType:
+        if module_name == "rerun":
+            return fake
+        if module_name == "rerun.blueprint":
+            return fake_blueprint
+        raise ModuleNotFoundError(module_name)
+
+    monkeypatch.setattr("importlib.import_module", _import)
+
+    visualizer = RerunVisualizer(
+        RerunVisualizerConfig(
+            application_id="hts-test",
+            spawn=False,
+            show_coordinate_frames=True,
+        )
+    )
+
+    visualizer.log_packet(
+        WristPacket(
+            side=HandSide.LEFT,
+            kind=PacketType.WRIST,
+            data=WristPose(x=0.0, y=0.0, z=0.0, qx=0.0, qy=0.0, qz=0.0, qw=1.0),
+        )
+    )
+    visualizer.log_packet(
+        HeadPosePacket(
+            side=HandSide.HEAD,
+            kind=PacketType.POSE,
+            data=HeadPose(x=0.0, y=0.0, z=0.0, qx=0.0, qy=0.0, qz=0.0, qw=1.0),
+        )
+    )
+
+    logged_paths = [path for path, _ in fake.logs]
+    assert "hands/left/frame_axes" in logged_paths
+    assert "head/frame_axes" in logged_paths
+    frame_payload = next(payload for path, payload in fake.logs if path == "hands/left/frame_axes")
+    assert isinstance(frame_payload, _FakeRerun.LineStrips3D)
+    # In FLU view, RGB axes should map to +X/+Y/+Z respectively.
+    assert frame_payload.strips[0][1] == [0.08, -0.0, -0.0]  # red -> +X (forward)
+    assert frame_payload.strips[1][1] == [0.0, 0.08, -0.0]  # green -> +Y (left)
+    assert frame_payload.strips[2][1] == [0.0, -0.0, 0.08]  # blue -> +Z (up)
+
+
 def test_landmarks_are_transformed_by_wrist_pose(monkeypatch: pytest.MonkeyPatch) -> None:
     fake = _FakeRerun()
     fake_blueprint = _FakeBlueprint("rerun.blueprint")
@@ -231,6 +288,7 @@ def test_right_landmarks_use_red_color(monkeypatch: pytest.MonkeyPatch) -> None:
     assert isinstance(landmarks_payload, _FakeRerun.Points3D)
     assert landmarks_payload.colors == [[255, 64, 64]]
 
+
 def test_default_visualizer_config_values() -> None:
     config = RerunVisualizerConfig()
 
@@ -238,6 +296,7 @@ def test_default_visualizer_config_values() -> None:
     assert config.spawn is True
     assert config.landmarks_are_wrist_relative is True
     assert config.show_jitter_panel is False
+    assert config.show_coordinate_frames is False
 
 
 def test_jitter_metrics_are_logged_from_frames(monkeypatch: pytest.MonkeyPatch) -> None:
