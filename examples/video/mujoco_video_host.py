@@ -30,34 +30,35 @@ _DEFAULT_MODEL = os.path.join(os.path.dirname(__file__), "assets", "aloha", "sce
 
 
 # ---------------------------------------------------------------------------
-# Unity left-handed → FLU coordinate helpers
+# Unity left-handed → ALOHA sim world frame coordinate helpers
 # ---------------------------------------------------------------------------
 
 
 def _wrist_to_sim_pos(wrist: Any) -> Any:
-    """Convert Unity left-handed wrist position to ALOHA sim frame.
+    """Convert Unity left-handed wrist position to ALOHA sim world frame.
 
     Unity left-handed: x=right, y=up, z=forward.
-    ALOHA sim frame:   x=backward, y=right, z=up  (FLU rotated 180° about z).
-    Mapping: (x,y,z) → (-z, x, y).
+    ALOHA sim world:   x=right (screen), y=forward (into screen), z=up.
+    Mapping: (x,y,z) → (x, z, y).
     """
     import numpy as np
 
-    return np.array([-wrist.z, wrist.x, wrist.y])
+    return np.array([wrist.x, wrist.z, wrist.y])
 
 
 def _wrist_to_sim_rotmat(wrist: Any) -> Any:
     """Convert Unity left-handed wrist quaternion to ALOHA sim 3x3 rotation matrix.
 
     WristPose stores quaternion as (qx, qy, qz, qw) — xyzw order.
-    The basis transform maps Unity-left vectors to the ALOHA sim frame
-    (FLU rotated 180° about z).
+    The basis transform maps Unity-left vectors to the ALOHA sim world
+    frame.  Both arms use the same world-frame mapping — IK handles the
+    per-arm kinematics.
     Rotation matrices transform as: R_sim = T @ R_unity @ T^T.
     """
     import mujoco
     import numpy as np
 
-    basis = np.array([[0, 0, -1], [1, 0, 0], [0, 1, 0]], dtype=np.float64)
+    basis = np.array([[1, 0, 0], [0, 0, 1], [0, 1, 0]], dtype=np.float64)
     rot = np.empty(9)
     # mju_quat2Mat expects wxyz order.
     mujoco.mju_quat2Mat(rot, [wrist.qw, wrist.qx, wrist.qy, wrist.qz])
@@ -254,7 +255,7 @@ def _build_pre_step(
                 orientation_cost=1.0,
                 lm_damping=1.0,
             )
-            posture_task = mink.PostureTask(model, cost=1e-4)
+            posture_task = mink.PostureTask(model, cost=1e-1)
 
             tasks = [l_ee_task, r_ee_task, posture_task]
             limits = [
