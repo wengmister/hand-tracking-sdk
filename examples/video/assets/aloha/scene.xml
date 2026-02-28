@@ -87,5 +87,12 @@
     <geom class="frame" pos="-0.6 -0.26 0.12" quat="0.923 0.382 0 0" material="metal" mesh="angled_extrusion"/>
     <geom class="frame" pos="0.43 -0.361 1.02" quat="0 0 0 1" mesh="extrusion_2040_1000"/>
     <geom class="frame" pos="0 -0.391 -0.01" quat="0 0 0 1" mesh="wormseye_mount"/>
+
+    <!-- Interactive cube for pick-and-place teleop -->
+    <body name="cube" pos="0 -0.1 0.02">
+      <freejoint name="cube_joint"/>
+      <geom name="cube" type="box" size="0.015 0.015 0.015" mass="0.05" rgba="0.8 0.2 0.1 1"
+            condim="6" friction="1 5e-3 5e-4" solref=".01 1"/>
+    </body>
   </worldbody>
 </mujoco>
