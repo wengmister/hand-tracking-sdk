@@ -22,12 +22,46 @@ from hand_tracking_sdk.client import (
     StreamOutput,
     TransportMode,
 )
-from hand_tracking_sdk.convert import convert_hand_frame_unity_left_to_right
 from hand_tracking_sdk.frame import HandFrame, HeadFrame
-from hand_tracking_sdk.teleop import GripConfig, extract_arm_target
+from hand_tracking_sdk.teleop import GripConfig, grip_value
 from hand_tracking_sdk.video.service import VideoServiceConfig
 
 _DEFAULT_MODEL = os.path.join(os.path.dirname(__file__), "assets", "aloha", "scene.xml")
+
+
+# ---------------------------------------------------------------------------
+# Unity left-handed → FLU coordinate helpers
+# ---------------------------------------------------------------------------
+
+
+def _wrist_to_flu_pos(wrist: Any) -> Any:
+    """Convert Unity left-handed wrist position to FLU numpy array.
+
+    Unity left-handed: x=right, y=up, z=forward.
+    FLU:               x=forward, y=left, z=up.
+    Mapping: (x,y,z) → (z, -x, y).
+    """
+    import numpy as np
+
+    return np.array([wrist.z, -wrist.x, wrist.y])
+
+
+def _wrist_to_flu_rotmat(wrist: Any) -> Any:
+    """Convert Unity left-handed wrist quaternion to FLU 3x3 rotation matrix.
+
+    WristPose stores quaternion as (qx, qy, qz, qw) — xyzw order.
+    The basis transform T maps Unity-left vectors to FLU vectors.
+    Rotation matrices transform as: R_flu = T @ R_unity @ T^T.
+    """
+    import mujoco
+    import numpy as np
+
+    basis = np.array([[0, 0, 1], [-1, 0, 0], [0, 1, 0]], dtype=np.float64)
+    rot = np.empty(9)
+    # mju_quat2Mat expects wxyz order.
+    mujoco.mju_quat2Mat(rot, [wrist.qw, wrist.qx, wrist.qy, wrist.qz])
+    return basis @ rot.reshape(3, 3) @ basis.T
+
 
 # ALOHA joint names per arm (6-DOF, no gripper).
 _ARM_JOINT_NAMES = [
@@ -120,8 +154,6 @@ def _start_mocap_pump(
 
     def _pump() -> None:
         for event in client.iter_events():
-            if isinstance(event, HandFrame):
-                event = convert_hand_frame_unity_left_to_right(event)
             latest[event.side.value] = event
 
     thread = Thread(target=_pump, daemon=True)
@@ -237,6 +269,10 @@ def _build_pre_step(
             l_ee_task.set_target_from_configuration(configuration)
             r_ee_task.set_target_from_configuration(configuration)
 
+            # Capture initial EE poses for differential teleop.
+            l_site_id = model.site("left/gripper").id
+            r_site_id = model.site("right/gripper").id
+
             state.update(
                 mink=mink,
                 configuration=configuration,
@@ -249,6 +285,14 @@ def _build_pre_step(
                 left_grip_id=left_grip_id,
                 right_grip_id=right_grip_id,
                 subtree_ids=[left_subtree, right_subtree],
+                initial_l_pos=data.site_xpos[l_site_id].copy(),
+                initial_l_rot=data.site_xmat[l_site_id].reshape(3, 3).copy(),
+                initial_r_pos=data.site_xpos[r_site_id].copy(),
+                initial_r_rot=data.site_xmat[r_site_id].reshape(3, 3).copy(),
+                ref_left_pos=None,
+                ref_left_rot=None,
+                ref_right_pos=None,
+                ref_right_rot=None,
             )
 
         # ---- per-frame IK solve ----
@@ -269,26 +313,49 @@ def _build_pre_step(
         left = latest.get("Left")
         right = latest.get("Right")
 
-        # Set IK targets from hand frames.
+        # Differential teleop: compute hand delta from reference pose,
+        # apply to initial EE pose.  Positions and rotations are converted
+        # from Unity left-handed to FLU before computing deltas so they
+        # align with the MuJoCo world frame.
         if isinstance(left, HandFrame):
-            target = extract_arm_target(left, grip_config)
+            cur_pos = _wrist_to_flu_pos(left.wrist)
+            cur_rot = _wrist_to_flu_rotmat(left.wrist)
+            if state["ref_left_pos"] is None:
+                state["ref_left_pos"] = cur_pos.copy()
+                state["ref_left_rot"] = cur_rot.copy()
+            delta_pos = cur_pos - state["ref_left_pos"]
+            delta_rot = cur_rot @ state["ref_left_rot"].T
+            target_pos = state["initial_l_pos"] + delta_pos
+            target_rot = delta_rot @ state["initial_l_rot"]
+            quat = np.empty(4)
+            mujoco.mju_mat2Quat(quat, target_rot.flatten())
             l_ee_task.set_target(
                 mink.SE3.from_rotation_and_translation(
-                    rotation=mink.SO3(wxyz=np.array(target.orientation)),
-                    translation=np.array(target.position),
+                    rotation=mink.SO3(wxyz=quat),
+                    translation=target_pos,
                 )
             )
-            data.ctrl[state["left_grip_id"]] = target.grip
+            data.ctrl[state["left_grip_id"]] = grip_value(left, grip_config)
 
         if isinstance(right, HandFrame):
-            target = extract_arm_target(right, grip_config)
+            cur_pos = _wrist_to_flu_pos(right.wrist)
+            cur_rot = _wrist_to_flu_rotmat(right.wrist)
+            if state["ref_right_pos"] is None:
+                state["ref_right_pos"] = cur_pos.copy()
+                state["ref_right_rot"] = cur_rot.copy()
+            delta_pos = cur_pos - state["ref_right_pos"]
+            delta_rot = cur_rot @ state["ref_right_rot"].T
+            target_pos = state["initial_r_pos"] + delta_pos
+            target_rot = delta_rot @ state["initial_r_rot"]
+            quat = np.empty(4)
+            mujoco.mju_mat2Quat(quat, target_rot.flatten())
             r_ee_task.set_target(
                 mink.SE3.from_rotation_and_translation(
-                    rotation=mink.SO3(wxyz=np.array(target.orientation)),
-                    translation=np.array(target.position),
+                    rotation=mink.SO3(wxyz=quat),
+                    translation=target_pos,
                 )
             )
-            data.ctrl[state["right_grip_id"]] = target.grip
+            data.ctrl[state["right_grip_id"]] = grip_value(right, grip_config)
 
         # Solve IK.
         for _ in range(5):
