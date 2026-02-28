@@ -34,29 +34,30 @@ _DEFAULT_MODEL = os.path.join(os.path.dirname(__file__), "assets", "aloha", "sce
 # ---------------------------------------------------------------------------
 
 
-def _wrist_to_flu_pos(wrist: Any) -> Any:
-    """Convert Unity left-handed wrist position to FLU numpy array.
+def _wrist_to_sim_pos(wrist: Any) -> Any:
+    """Convert Unity left-handed wrist position to ALOHA sim frame.
 
     Unity left-handed: x=right, y=up, z=forward.
-    FLU:               x=forward, y=left, z=up.
-    Mapping: (x,y,z) → (z, -x, y).
+    ALOHA sim frame:   x=backward, y=right, z=up  (FLU rotated 180° about z).
+    Mapping: (x,y,z) → (-z, x, y).
     """
     import numpy as np
 
-    return np.array([wrist.z, -wrist.x, wrist.y])
+    return np.array([-wrist.z, wrist.x, wrist.y])
 
 
-def _wrist_to_flu_rotmat(wrist: Any) -> Any:
-    """Convert Unity left-handed wrist quaternion to FLU 3x3 rotation matrix.
+def _wrist_to_sim_rotmat(wrist: Any) -> Any:
+    """Convert Unity left-handed wrist quaternion to ALOHA sim 3x3 rotation matrix.
 
     WristPose stores quaternion as (qx, qy, qz, qw) — xyzw order.
-    The basis transform T maps Unity-left vectors to FLU vectors.
-    Rotation matrices transform as: R_flu = T @ R_unity @ T^T.
+    The basis transform maps Unity-left vectors to the ALOHA sim frame
+    (FLU rotated 180° about z).
+    Rotation matrices transform as: R_sim = T @ R_unity @ T^T.
     """
     import mujoco
     import numpy as np
 
-    basis = np.array([[0, 0, 1], [-1, 0, 0], [0, 1, 0]], dtype=np.float64)
+    basis = np.array([[0, 0, -1], [1, 0, 0], [0, 1, 0]], dtype=np.float64)
     rot = np.empty(9)
     # mju_quat2Mat expects wxyz order.
     mujoco.mju_quat2Mat(rot, [wrist.qw, wrist.qx, wrist.qy, wrist.qz])
@@ -318,8 +319,8 @@ def _build_pre_step(
         # from Unity left-handed to FLU before computing deltas so they
         # align with the MuJoCo world frame.
         if isinstance(left, HandFrame):
-            cur_pos = _wrist_to_flu_pos(left.wrist)
-            cur_rot = _wrist_to_flu_rotmat(left.wrist)
+            cur_pos = _wrist_to_sim_pos(left.wrist)
+            cur_rot = _wrist_to_sim_rotmat(left.wrist)
             if state["ref_left_pos"] is None:
                 state["ref_left_pos"] = cur_pos.copy()
                 state["ref_left_rot"] = cur_rot.copy()
@@ -338,8 +339,8 @@ def _build_pre_step(
             data.ctrl[state["left_grip_id"]] = grip_value(left, grip_config)
 
         if isinstance(right, HandFrame):
-            cur_pos = _wrist_to_flu_pos(right.wrist)
-            cur_rot = _wrist_to_flu_rotmat(right.wrist)
+            cur_pos = _wrist_to_sim_pos(right.wrist)
+            cur_rot = _wrist_to_sim_rotmat(right.wrist)
             if state["ref_right_pos"] is None:
                 state["ref_right_pos"] = cur_pos.copy()
                 state["ref_right_rot"] = cur_rot.copy()
