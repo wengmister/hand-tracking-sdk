@@ -88,6 +88,11 @@ class VideoWebRTCSender:
         self._force_h264_codec_if_possible()
         answer = await self._pc.createAnswer()
         await self._pc.setLocalDescription(answer)
+        for t in self._pc.getTransceivers():
+            self._log(
+                f"transceiver kind={t.kind} direction={t.direction} "
+                f"currentDirection={t.currentDirection}"
+            )
         return str(self._pc.localDescription.sdp)
 
     async def add_remote_ice_candidate(
@@ -188,7 +193,15 @@ class VideoWebRTCSender:
                 self._sender = sender
 
             async def recv(self) -> Any:
-                frame = await self._adapter.recv()
+                try:
+                    frame = await self._adapter.recv()
+                except Exception as exc:
+                    import traceback
+
+                    self._sender._log(
+                        f"recv() error: {exc}\n{''.join(traceback.format_exc())}"
+                    )
+                    raise
                 self._sender._frames_sent += 1
                 if frame is None:
                     self._sender._frame_drops += 1

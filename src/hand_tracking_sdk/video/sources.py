@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 from abc import ABC, abstractmethod
 from collections.abc import Callable
+from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
 from time import monotonic, monotonic_ns
 from typing import Any
@@ -154,6 +155,9 @@ class MujocoSourceAdapter(VideoSourceAdapter):
         self._data: Any = None
         self._renderer: Any = None
         self._last_frame_ts = 0.0
+        # Single-thread executor: OpenGL contexts are thread-local, so init
+        # and every render call must happen on the same OS thread.
+        self._gl_executor = ThreadPoolExecutor(max_workers=1)
 
     def _init_mujoco(self) -> None:
         """Blocking MuJoCo setup — runs in a worker thread."""
@@ -175,7 +179,7 @@ class MujocoSourceAdapter(VideoSourceAdapter):
     async def start(self) -> None:
         loop = asyncio.get_running_loop()
         try:
-            await loop.run_in_executor(None, self._init_mujoco)
+            await loop.run_in_executor(self._gl_executor, self._init_mujoco)
         except ImportError as exc:
             raise RuntimeError(
                 "mujoco is required for sim source. "
@@ -191,6 +195,7 @@ class MujocoSourceAdapter(VideoSourceAdapter):
         self._data = None
         self._model = None
         self._mujoco = None
+        self._gl_executor.shutdown(wait=False)
 
     def get_format(self) -> VideoFormat:
         return self._format
@@ -226,5 +231,5 @@ class MujocoSourceAdapter(VideoSourceAdapter):
         self._last_frame_ts = monotonic()
 
         loop = asyncio.get_running_loop()
-        frame_rgb = await loop.run_in_executor(None, self._step_and_render)
+        frame_rgb = await loop.run_in_executor(self._gl_executor, self._step_and_render)
         return av.VideoFrame.from_ndarray(frame_rgb, format="rgb24")

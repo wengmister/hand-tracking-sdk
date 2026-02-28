@@ -229,11 +229,13 @@ def _build_pre_step(
                 mink.VelocityLimit(model, velocity_limits),
             ]
 
-            # Reset to neutral pose.
+            # Reset to neutral pose and set initial targets.
             mujoco.mj_resetDataKeyframe(model, data, model.key("neutral_pose").id)
             configuration.update(data.qpos)
             mujoco.mj_forward(model, data)
             posture_task.set_target_from_configuration(configuration)
+            l_ee_task.set_target_from_configuration(configuration)
+            r_ee_task.set_target_from_configuration(configuration)
 
             state.update(
                 mink=mink,
@@ -259,6 +261,9 @@ def _build_pre_step(
         dof_ids = state["dof_ids"]
         actuator_ids = state["actuator_ids"]
 
+        # Sync mink configuration with actual sim state after previous mj_step.
+        configuration.update(data.qpos)
+
         dt = 1.0 / 30.0  # Match video frame rate.
 
         left = latest.get("Left")
@@ -267,11 +272,9 @@ def _build_pre_step(
         # Set IK targets from hand frames.
         if isinstance(left, HandFrame):
             target = extract_arm_target(left, grip_config)
-            rot = np.empty(9)
-            mujoco.mju_quat2Mat(rot, list(target.orientation))
             l_ee_task.set_target(
                 mink.SE3.from_rotation_and_translation(
-                    rotation=rot.reshape(3, 3),
+                    rotation=mink.SO3(wxyz=np.array(target.orientation)),
                     translation=np.array(target.position),
                 )
             )
@@ -279,11 +282,9 @@ def _build_pre_step(
 
         if isinstance(right, HandFrame):
             target = extract_arm_target(right, grip_config)
-            rot = np.empty(9)
-            mujoco.mju_quat2Mat(rot, list(target.orientation))
             r_ee_task.set_target(
                 mink.SE3.from_rotation_and_translation(
-                    rotation=rot.reshape(3, 3),
+                    rotation=mink.SO3(wxyz=np.array(target.orientation)),
                     translation=np.array(target.position),
                 )
             )
