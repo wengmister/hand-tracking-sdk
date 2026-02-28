@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 from abc import ABC, abstractmethod
+from collections.abc import Callable
 from dataclasses import dataclass
 from time import monotonic, monotonic_ns
 from typing import Any
@@ -141,11 +142,13 @@ class MujocoSourceAdapter(VideoSourceAdapter):
         width: int = 1280,
         height: int = 720,
         fps: int = 30,
+        pre_step: Callable[[Any, Any], None] | None = None,
     ) -> None:
         self._format = VideoFormat(width=width, height=height, fps=fps)
         self._model_path = model_path
         self._camera = camera
         self._camera_arg: Any = camera
+        self._pre_step = pre_step
         self._mujoco: Any = None
         self._model: Any = None
         self._data: Any = None
@@ -206,7 +209,9 @@ class MujocoSourceAdapter(VideoSourceAdapter):
             await asyncio.sleep(sleep_s)
         self._last_frame_ts = monotonic()
 
-        # Step one simulation tick and render from configured camera.
+        # Apply external inputs (e.g. mocap poses) then step physics.
+        if self._pre_step is not None:
+            self._pre_step(self._model, self._data)
         self._mujoco.mj_step(self._model, self._data)
         self._renderer.update_scene(self._data, camera=self._camera_arg)
         frame_rgb = self._renderer.render()

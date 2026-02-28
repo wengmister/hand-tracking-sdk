@@ -29,6 +29,7 @@ class VideoServiceConfig:
     webcam_index: int = 0
     mj_model_path: str | None = None
     mj_camera: str | None = None
+    mj_pre_step: Callable[[Any, Any], None] | None = None
     stats_interval_s: float = 1.0
     server_version: str = "0.1.0"
     verbose: bool = False
@@ -346,6 +347,7 @@ class VideoService:
                 width=width,
                 height=height,
                 fps=fps,
+                pre_step=self._config.mj_pre_step,
             )
         if self._config.source == "webcam":
             return WebcamSourceAdapter(
