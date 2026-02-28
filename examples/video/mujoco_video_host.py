@@ -23,7 +23,7 @@ from hand_tracking_sdk.frame import HandFrame, HeadFrame
 from hand_tracking_sdk.models import JointName
 from hand_tracking_sdk.video.service import VideoServiceConfig
 
-_DEFAULT_MODEL = os.path.join(os.path.dirname(__file__), "assets", "dual_arm_teleop.xml")
+_DEFAULT_MODEL = os.path.join(os.path.dirname(__file__), "assets", "aloha", "scene.xml")
 
 
 def _parse_args() -> argparse.Namespace:
@@ -33,7 +33,9 @@ def _parse_args() -> argparse.Namespace:
         default=_DEFAULT_MODEL,
         help="Path to MuJoCo XML model (default: bundled dual-arm).",
     )
-    parser.add_argument("--mj-camera", default=None, help="MuJoCo camera name or id string.")
+    parser.add_argument(
+        "--mj-camera", default="teleop_overview", help="MuJoCo camera name or id string."
+    )
     parser.add_argument("--tcp-host", default="0.0.0.0", help="WebSocket signaling bind host.")
     parser.add_argument(
         "--tcp-port", type=int, default=8765, help="WebSocket signaling bind port."
