@@ -155,14 +155,9 @@ class MujocoSourceAdapter(VideoSourceAdapter):
         self._renderer: Any = None
         self._last_frame_ts = 0.0
 
-    async def start(self) -> None:
-        try:
-            import mujoco
-        except Exception as exc:
-            raise RuntimeError(
-                "mujoco is required for sim source. "
-                "Install with: pip install hand-tracking-sdk[sim]"
-            ) from exc
+    def _init_mujoco(self) -> None:
+        """Blocking MuJoCo setup — runs in a worker thread."""
+        import mujoco
 
         self._mujoco = mujoco
         self._model = mujoco.MjModel.from_xml_path(self._model_path)
@@ -177,6 +172,16 @@ class MujocoSourceAdapter(VideoSourceAdapter):
         mujoco.mj_forward(self._model, self._data)
         self._last_frame_ts = monotonic()
 
+    async def start(self) -> None:
+        loop = asyncio.get_running_loop()
+        try:
+            await loop.run_in_executor(None, self._init_mujoco)
+        except ImportError as exc:
+            raise RuntimeError(
+                "mujoco is required for sim source. "
+                "Install with: pip install hand-tracking-sdk[sim]"
+            ) from exc
+
     async def stop(self) -> None:
         if self._renderer is not None:
             close_fn = getattr(self._renderer, "close", None)
@@ -189,6 +194,17 @@ class MujocoSourceAdapter(VideoSourceAdapter):
 
     def get_format(self) -> VideoFormat:
         return self._format
+
+    def _step_and_render(self) -> Any:
+        """Blocking sim step + render — runs in a worker thread."""
+        import numpy as np
+
+        if self._pre_step is not None:
+            self._pre_step(self._model, self._data)
+        self._mujoco.mj_step(self._model, self._data)
+        self._renderer.update_scene(self._data, camera=self._camera_arg)
+        # Copy the rendered pixels so the renderer buffer can be reused.
+        return np.array(self._renderer.render())
 
     async def next_frame(self) -> Any:
         import av
@@ -209,10 +225,6 @@ class MujocoSourceAdapter(VideoSourceAdapter):
             await asyncio.sleep(sleep_s)
         self._last_frame_ts = monotonic()
 
-        # Apply external inputs (e.g. mocap poses) then step physics.
-        if self._pre_step is not None:
-            self._pre_step(self._model, self._data)
-        self._mujoco.mj_step(self._model, self._data)
-        self._renderer.update_scene(self._data, camera=self._camera_arg)
-        frame_rgb = self._renderer.render()
+        loop = asyncio.get_running_loop()
+        frame_rgb = await loop.run_in_executor(None, self._step_and_render)
         return av.VideoFrame.from_ndarray(frame_rgb, format="rgb24")

@@ -376,10 +376,16 @@ class VideoService:
                 ),
             )
 
-        return VideoWebRTCSender(source=source, on_local_ice_candidate=_on_candidate)
+        return VideoWebRTCSender(
+            source=source,
+            on_local_ice_candidate=_on_candidate,
+            log_hook=lambda msg: self._log(f"[sender] {msg}"),
+        )
 
     def _parse_preset(self, preset: str) -> tuple[int, int, int]:
         normalized = preset.lower()
+        if normalized == "480p30":
+            return (640, 480, 30)
         if normalized == "720p30":
             return (1280, 720, 30)
         if normalized == "1080p30":
