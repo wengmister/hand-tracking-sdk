@@ -174,6 +174,9 @@ class MujocoSourceAdapter(VideoSourceAdapter):
         if self._camera is not None and self._camera.isdigit():
             self._camera_arg = int(self._camera)
         mujoco.mj_forward(self._model, self._data)
+        # Pre-compute physics steps per rendered frame for real-time sim.
+        frame_interval_s = 1.0 / max(1, self._format.fps)
+        self._n_physics_steps = max(1, round(frame_interval_s / self._model.opt.timestep))
         self._last_frame_ts = monotonic()
 
     async def start(self) -> None:
@@ -206,7 +209,10 @@ class MujocoSourceAdapter(VideoSourceAdapter):
 
         if self._pre_step is not None:
             self._pre_step(self._model, self._data)
-        self._mujoco.mj_step(self._model, self._data)
+        # Run enough physics sub-steps to cover the target frame interval
+        # so the sim advances at real-time speed.
+        for _ in range(self._n_physics_steps):
+            self._mujoco.mj_step(self._model, self._data)
         self._renderer.update_scene(self._data, camera=self._camera_arg)
         # Copy the rendered pixels so the renderer buffer can be reused.
         return np.array(self._renderer.render())
@@ -222,12 +228,6 @@ class MujocoSourceAdapter(VideoSourceAdapter):
         ):
             raise RuntimeError("MuJoCo source not started.")
 
-        # Basic frame pacing to target FPS.
-        frame_interval_s = 1.0 / max(1, self._format.fps)
-        now = monotonic()
-        sleep_s = frame_interval_s - (now - self._last_frame_ts)
-        if sleep_s > 0:
-            await asyncio.sleep(sleep_s)
         self._last_frame_ts = monotonic()
 
         loop = asyncio.get_running_loop()

@@ -386,6 +386,8 @@ class VideoService:
         normalized = preset.lower()
         if normalized == "480p30":
             return (640, 480, 30)
+        if normalized == "480p60":
+            return (640, 480, 60)
         if normalized == "720p30":
             return (1280, 720, 30)
         if normalized == "1080p30":
