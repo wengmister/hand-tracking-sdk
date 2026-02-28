@@ -33,7 +33,7 @@ def _parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--preset",
         default="720p30",
-        choices=("480p30", "720p30", "1080p30"),
+        choices=("480p30", "480p60", "720p30", "1080p30"),
         help="Video preset.",
     )
     parser.add_argument("--webcam-index", type=int, default=0, help="Webcam device index.")

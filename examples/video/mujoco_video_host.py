@@ -106,9 +106,9 @@ def _parse_args() -> argparse.Namespace:
     )
     parser.add_argument(
         "--preset",
-        default="480p30",
-        choices=("480p30", "720p30", "1080p30"),
-        help="Video preset (default 480p30 for broad GPU compat).",
+        default="480p60",
+        choices=("480p30", "480p60", "720p30", "1080p30"),
+        help="Video preset (default 480p60 for responsive teleop).",
     )
     parser.add_argument(
         "--left-gripper-actuator",
@@ -357,8 +357,8 @@ def _build_pre_step(
             )
             data.ctrl[state["right_grip_id"]] = grip_value(right, grip_config)
 
-        # Solve IK.
-        for _ in range(5):
+        # Solve IK (2 iterations suffices for small per-frame deltas).
+        for _ in range(2):
             vel = mink.solve_ik(
                 configuration,
                 tasks,
