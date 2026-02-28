@@ -49,10 +49,12 @@ class VideoWebRTCSender:
         *,
         source: VideoSourceAdapter,
         on_local_ice_candidate: Callable[[dict[str, Any]], Awaitable[None]] | None = None,
+        log_hook: Callable[[str], None] | None = None,
     ) -> None:
         """Initialize sender with a frame source and optional ICE callback."""
         self._source = source
         self._on_local_ice_candidate = on_local_ice_candidate
+        self._log_hook = log_hook
         self._pc: Any = None
         self._created_at = monotonic()
         self._frames_sent = 0
@@ -145,7 +147,33 @@ class VideoWebRTCSender:
 
     def _new_peer_connection(self) -> Any:
         rtc_peer_connection = self._import_aiortc_symbol("RTCPeerConnection")
-        return rtc_peer_connection()
+        rtc_configuration = self._import_aiortc_symbol("RTCConfiguration")
+        rtc_ice_server = self._import_aiortc_symbol("RTCIceServer")
+        config = rtc_configuration(
+            iceServers=[
+                rtc_ice_server(urls=["stun:stun.l.google.com:19302"]),
+            ]
+        )
+        pc = rtc_peer_connection(config)
+        self._wire_connection_state(pc)
+        return pc
+
+    def _wire_connection_state(self, pc: Any) -> None:
+        @pc.on("connectionstatechange")
+        async def _on_state() -> None:
+            self._log(f"connection state: {pc.connectionState}")
+
+        @pc.on("iceconnectionstatechange")
+        async def _on_ice_state() -> None:
+            self._log(f"ICE connection state: {pc.iceConnectionState}")
+
+        @pc.on("icegatheringstatechange")
+        async def _on_ice_gathering() -> None:
+            self._log(f"ICE gathering state: {pc.iceGatheringState}")
+
+    def _log(self, message: str) -> None:
+        if self._log_hook is not None:
+            self._log_hook(message)
 
     def _add_video_track(self) -> None:
         if self._pc is None:
@@ -178,8 +206,10 @@ class VideoWebRTCSender:
         async def _on_icecandidate(candidate: Any) -> None:
             if candidate is None:
                 return
+            candidate_str = str(getattr(candidate, "candidate", ""))
+            self._log(f"local ICE candidate: {candidate_str[:80]}")
             payload = {
-                "candidate": str(getattr(candidate, "candidate", "")),
+                "candidate": candidate_str,
                 "sdpMid": getattr(candidate, "sdpMid", None),
                 "sdpMLineIndex": getattr(candidate, "sdpMLineIndex", None),
             }
