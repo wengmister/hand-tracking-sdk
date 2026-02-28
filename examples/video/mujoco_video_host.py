@@ -109,7 +109,7 @@ def _parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--preset",
         default="480p60",
-        choices=("480p30", "480p60", "720p30", "1080p30"),
+        choices=("480p30", "480p60", "720p30", "720p60", "1080p30"),
         help="Video preset (default 480p60 for responsive teleop).",
     )
     parser.add_argument(

@@ -390,6 +390,8 @@ class VideoService:
             return (640, 480, 60)
         if normalized == "720p30":
             return (1280, 720, 30)
+        if normalized == "720p60":
+            return (1280, 720, 60)
         if normalized == "1080p30":
             return (1920, 1080, 30)
         return (1280, 720, 30)
