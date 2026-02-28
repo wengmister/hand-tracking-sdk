@@ -1,10 +1,14 @@
-"""Run host-side MuJoCo video service with optional mocap-driven teleop."""
+"""Run host-side MuJoCo video service with optional mocap-driven teleop.
+
+Uses mink inverse kinematics to map incoming wrist poses to ALOHA joint
+angles.  Gripper control is derived from thumb-to-index pinch distance
+via the SDK teleop module.
+"""
 
 from __future__ import annotations
 
 import argparse
 import asyncio
-import math
 import os
 from threading import Thread
 from typing import Any
@@ -20,10 +24,20 @@ from hand_tracking_sdk.client import (
 )
 from hand_tracking_sdk.convert import convert_hand_frame_unity_left_to_right
 from hand_tracking_sdk.frame import HandFrame, HeadFrame
-from hand_tracking_sdk.models import JointName
+from hand_tracking_sdk.teleop import GripConfig, extract_arm_target
 from hand_tracking_sdk.video.service import VideoServiceConfig
 
 _DEFAULT_MODEL = os.path.join(os.path.dirname(__file__), "assets", "aloha", "scene.xml")
+
+# ALOHA joint names per arm (6-DOF, no gripper).
+_ARM_JOINT_NAMES = [
+    "waist",
+    "shoulder",
+    "elbow",
+    "forearm_roll",
+    "wrist_angle",
+    "wrist_rotate",
+]
 
 
 def _parse_args() -> argparse.Namespace:
@@ -31,7 +45,7 @@ def _parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--mj-model",
         default=_DEFAULT_MODEL,
-        help="Path to MuJoCo XML model (default: bundled dual-arm).",
+        help="Path to MuJoCo XML model (default: bundled ALOHA).",
     )
     parser.add_argument(
         "--mj-camera", default="teleop_overview", help="MuJoCo camera name or id string."
@@ -48,7 +62,7 @@ def _parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--mocap-tcp-port",
         type=int,
-        default=8000,
+        default=5555,
         help="Telemetry TCP port for Quest mocap stream.",
     )
     parser.add_argument(
@@ -58,28 +72,18 @@ def _parse_args() -> argparse.Namespace:
     )
     parser.add_argument(
         "--preset",
-        default="720p30",
-        choices=("720p30", "1080p30"),
-        help="Video preset.",
-    )
-    parser.add_argument(
-        "--left-mocap-body",
-        default="left_target",
-        help="MuJoCo mocap body name for left wrist.",
-    )
-    parser.add_argument(
-        "--right-mocap-body",
-        default="right_target",
-        help="MuJoCo mocap body name for right wrist.",
+        default="480p30",
+        choices=("480p30", "720p30", "1080p30"),
+        help="Video preset (default 480p30 for broad GPU compat).",
     )
     parser.add_argument(
         "--left-gripper-actuator",
-        default="left_gripper",
+        default="left/gripper",
         help="MuJoCo actuator name for left gripper.",
     )
     parser.add_argument(
         "--right-gripper-actuator",
-        default="right_gripper",
+        default="right/gripper",
         help="MuJoCo actuator name for right gripper.",
     )
     parser.add_argument("--verbose", action="store_true", help="Enable verbose logs.")
@@ -126,93 +130,190 @@ def _start_mocap_pump(
 
 
 # ---------------------------------------------------------------------------
-# Mocap → MuJoCo pre_step wiring
+# Gravity compensation (from mink ALOHA example)
 # ---------------------------------------------------------------------------
 
 
-def _pinch_distance(frame: HandFrame) -> float:
-    """Compute Euclidean distance between thumb tip and index tip."""
-    thumb = frame.get_joint(JointName.THUMB_TIP)
-    index = frame.get_joint(JointName.INDEX_TIP)
-    return math.sqrt(sum((a - b) ** 2 for a, b in zip(thumb, index, strict=True)))
+def _compensate_gravity(
+    model: Any,
+    data: Any,
+    subtree_ids: list[int],
+) -> None:
+    """Apply gravity compensation forces to the given subtrees."""
+    import mujoco
+    import numpy as np
+
+    data.qfrc_applied[:] = 0.0
+    jac = np.empty((3, model.nv))
+    for sid in subtree_ids:
+        total_mass = model.body_subtreemass[sid]
+        mujoco.mj_jacSubtreeCom(model, data, jac, sid)
+        data.qfrc_applied[:] -= model.opt.gravity * total_mass @ jac
+
+
+# ---------------------------------------------------------------------------
+# IK-based pre_step wiring
+# ---------------------------------------------------------------------------
 
 
 def _build_pre_step(
     latest: dict[str, HandFrame | HeadFrame],
     *,
-    left_mocap_body: str,
-    right_mocap_body: str,
     left_gripper_actuator: str,
     right_gripper_actuator: str,
-    grip_open_dist: float = 0.06,
-    grip_close_dist: float = 0.02,
-    grip_range: float = 0.03,
+    grip_config: GripConfig | None = None,
 ) -> Any:
-    """Build a pre_step callback that applies mocap state to MuJoCo data.
+    """Build a pre_step callback that applies mocap state to MuJoCo via IK.
 
-    Wrist poses are written to ``data.mocap_pos`` / ``data.mocap_quat``.
-    Grip is computed from thumb-to-index pinch distance and mapped to
-    gripper actuator control values.
+    Uses mink inverse kinematics to map wrist poses from incoming hand
+    frames to joint-position actuator commands for the ALOHA arms.
+    Gripper control is derived from pinch distance.
     """
-    body_ids: dict[str, int] = {}
-    actuator_ids: dict[str, int] = {}
+    if grip_config is None:
+        grip_config = GripConfig()
 
-    def _grip_value(frame: HandFrame) -> float:
-        """Map pinch distance to gripper actuator value (0=closed, grip_range=open)."""
-        dist = _pinch_distance(frame)
-        t = max(0.0, min(1.0, (dist - grip_close_dist) / (grip_open_dist - grip_close_dist)))
-        return t * grip_range
+    # Mutable state populated on first call (lazy init).
+    state: dict[str, Any] = {}
 
     def pre_step(model: Any, data: Any) -> None:
-        # Lazy-resolve body and actuator ids on first call.
-        if not body_ids:
-            try:
-                import mujoco
+        import mujoco
+        import numpy as np
 
-                body_ids[left_mocap_body] = mujoco.mj_name2id(
-                    model, mujoco.mjtObj.mjOBJ_BODY, left_mocap_body
-                )
-                body_ids[right_mocap_body] = mujoco.mj_name2id(
-                    model, mujoco.mjtObj.mjOBJ_BODY, right_mocap_body
-                )
-                actuator_ids[left_gripper_actuator] = mujoco.mj_name2id(
-                    model, mujoco.mjtObj.mjOBJ_ACTUATOR, left_gripper_actuator
-                )
-                actuator_ids[right_gripper_actuator] = mujoco.mj_name2id(
-                    model, mujoco.mjtObj.mjOBJ_ACTUATOR, right_gripper_actuator
-                )
-            except Exception as exc:
-                print(f"[mujoco-host] failed to resolve MuJoCo names: {exc}")
+        # ---- lazy initialization on first call ----
+        if not state:
+            try:
+                import mink
+            except ImportError as exc:
+                print(f"[mujoco-host] mink not available: {exc}")
                 return
+
+            # Build joint name lists and resolve IDs.
+            joint_names: list[str] = []
+            velocity_limits: dict[str, float] = {}
+            for prefix in ("left", "right"):
+                for jn in _ARM_JOINT_NAMES:
+                    name = f"{prefix}/{jn}"
+                    joint_names.append(name)
+                    velocity_limits[name] = np.pi
+
+            dof_ids = np.array([model.joint(n).id for n in joint_names])
+            actuator_ids = np.array([model.actuator(n).id for n in joint_names])
+
+            left_grip_id = model.actuator(left_gripper_actuator).id
+            right_grip_id = model.actuator(right_gripper_actuator).id
+
+            left_subtree = model.body("left/base_link").id
+            right_subtree = model.body("right/base_link").id
+
+            configuration = mink.Configuration(model)
+
+            l_ee_task = mink.FrameTask(
+                frame_name="left/gripper",
+                frame_type="site",
+                position_cost=1.0,
+                orientation_cost=1.0,
+                lm_damping=1.0,
+            )
+            r_ee_task = mink.FrameTask(
+                frame_name="right/gripper",
+                frame_type="site",
+                position_cost=1.0,
+                orientation_cost=1.0,
+                lm_damping=1.0,
+            )
+            posture_task = mink.PostureTask(model, cost=1e-4)
+
+            tasks = [l_ee_task, r_ee_task, posture_task]
+            limits = [
+                mink.ConfigurationLimit(model=model),
+                mink.VelocityLimit(model, velocity_limits),
+            ]
+
+            # Reset to neutral pose.
+            mujoco.mj_resetDataKeyframe(model, data, model.key("neutral_pose").id)
+            configuration.update(data.qpos)
+            mujoco.mj_forward(model, data)
+            posture_task.set_target_from_configuration(configuration)
+
+            state.update(
+                mink=mink,
+                configuration=configuration,
+                l_ee_task=l_ee_task,
+                r_ee_task=r_ee_task,
+                tasks=tasks,
+                limits=limits,
+                dof_ids=dof_ids,
+                actuator_ids=actuator_ids,
+                left_grip_id=left_grip_id,
+                right_grip_id=right_grip_id,
+                subtree_ids=[left_subtree, right_subtree],
+            )
+
+        # ---- per-frame IK solve ----
+        mink = state["mink"]
+        configuration = state["configuration"]
+        l_ee_task = state["l_ee_task"]
+        r_ee_task = state["r_ee_task"]
+        tasks = state["tasks"]
+        limits = state["limits"]
+        dof_ids = state["dof_ids"]
+        actuator_ids = state["actuator_ids"]
+
+        dt = 1.0 / 30.0  # Match video frame rate.
 
         left = latest.get("Left")
         right = latest.get("Right")
 
+        # Set IK targets from hand frames.
         if isinstance(left, HandFrame):
-            bid = body_ids[left_mocap_body]
-            data.mocap_pos[bid] = [left.wrist.x, left.wrist.y, left.wrist.z]
-            data.mocap_quat[bid] = [left.wrist.qw, left.wrist.qx, left.wrist.qy, left.wrist.qz]
-            aid = actuator_ids[left_gripper_actuator]
-            data.ctrl[aid] = _grip_value(left)
-            # Mirror to coupled finger.
-            coupled_id = aid + 1
-            if coupled_id < model.nu:
-                data.ctrl[coupled_id] = data.ctrl[aid]
+            target = extract_arm_target(left, grip_config)
+            rot = np.empty(9)
+            mujoco.mju_quat2Mat(rot, list(target.orientation))
+            l_ee_task.set_target(
+                mink.SE3.from_rotation_and_translation(
+                    rotation=rot.reshape(3, 3),
+                    translation=np.array(target.position),
+                )
+            )
+            data.ctrl[state["left_grip_id"]] = target.grip
 
         if isinstance(right, HandFrame):
-            bid = body_ids[right_mocap_body]
-            data.mocap_pos[bid] = [right.wrist.x, right.wrist.y, right.wrist.z]
-            data.mocap_quat[bid] = [
-                right.wrist.qw,
-                right.wrist.qx,
-                right.wrist.qy,
-                right.wrist.qz,
-            ]
-            aid = actuator_ids[right_gripper_actuator]
-            data.ctrl[aid] = _grip_value(right)
-            coupled_id = aid + 1
-            if coupled_id < model.nu:
-                data.ctrl[coupled_id] = data.ctrl[aid]
+            target = extract_arm_target(right, grip_config)
+            rot = np.empty(9)
+            mujoco.mju_quat2Mat(rot, list(target.orientation))
+            r_ee_task.set_target(
+                mink.SE3.from_rotation_and_translation(
+                    rotation=rot.reshape(3, 3),
+                    translation=np.array(target.position),
+                )
+            )
+            data.ctrl[state["right_grip_id"]] = target.grip
+
+        # Solve IK.
+        for _ in range(5):
+            vel = mink.solve_ik(
+                configuration,
+                tasks,
+                dt,
+                "daqp",
+                limits=limits,
+                damping=1e-5,
+            )
+            configuration.integrate_inplace(vel, dt)
+
+            l_err = l_ee_task.compute_error(configuration)
+            r_err = r_ee_task.compute_error(configuration)
+            if (
+                np.linalg.norm(l_err[:3]) <= 5e-3
+                and np.linalg.norm(l_err[3:]) <= 5e-3
+                and np.linalg.norm(r_err[:3]) <= 5e-3
+                and np.linalg.norm(r_err[3:]) <= 5e-3
+            ):
+                break
+
+        # Write joint angles and apply gravity compensation.
+        data.ctrl[actuator_ids] = configuration.q[dof_ids]
+        _compensate_gravity(model, data, state["subtree_ids"])
 
     return pre_step
 
@@ -226,8 +327,6 @@ async def _run() -> int:
         latest = _start_mocap_pump(args.mocap_tcp_host, args.mocap_tcp_port)
         pre_step = _build_pre_step(
             latest,
-            left_mocap_body=args.left_mocap_body,
-            right_mocap_body=args.right_mocap_body,
             left_gripper_actuator=args.left_gripper_actuator,
             right_gripper_actuator=args.right_gripper_actuator,
         )
