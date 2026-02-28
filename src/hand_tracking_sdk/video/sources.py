@@ -7,7 +7,7 @@ from abc import ABC, abstractmethod
 from collections.abc import Callable
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
-from time import monotonic, monotonic_ns
+from time import monotonic, monotonic_ns, sleep
 from typing import Any
 
 
@@ -154,7 +154,7 @@ class MujocoSourceAdapter(VideoSourceAdapter):
         self._model: Any = None
         self._data: Any = None
         self._renderer: Any = None
-        self._last_frame_ts = 0.0
+        self._last_render_ts = 0.0
         # Single-thread executor: OpenGL contexts are thread-local, so init
         # and every render call must happen on the same OS thread.
         self._gl_executor = ThreadPoolExecutor(max_workers=1)
@@ -174,10 +174,11 @@ class MujocoSourceAdapter(VideoSourceAdapter):
         if self._camera is not None and self._camera.isdigit():
             self._camera_arg = int(self._camera)
         mujoco.mj_forward(self._model, self._data)
-        # Pre-compute physics steps per rendered frame for real-time sim.
+        # Cap catch-up physics steps at 2x target to prevent spiral-of-death
+        # after render hiccups or on the very first frame.
         frame_interval_s = 1.0 / max(1, self._format.fps)
-        self._n_physics_steps = max(1, round(frame_interval_s / self._model.opt.timestep))
-        self._last_frame_ts = monotonic()
+        self._max_physics_steps = max(1, round(2.0 * frame_interval_s / self._model.opt.timestep))
+        self._last_render_ts = monotonic()
 
     async def start(self) -> None:
         loop = asyncio.get_running_loop()
@@ -207,11 +208,27 @@ class MujocoSourceAdapter(VideoSourceAdapter):
         """Blocking sim step + render — runs in a worker thread."""
         import numpy as np
 
+        # Frame pacing — sleep in the worker thread where time.sleep has
+        # sub-ms resolution (vs asyncio.sleep's ~15.6ms on Windows).
+        target_interval = 1.0 / max(1, self._format.fps)
+        elapsed = monotonic() - self._last_render_ts
+        remaining = target_interval - elapsed
+        if remaining > 0.001:
+            sleep(remaining)
+
+        now = monotonic()
+        dt = now - self._last_render_ts
+        self._last_render_ts = now
+
         if self._pre_step is not None:
             self._pre_step(self._model, self._data)
-        # Run enough physics sub-steps to cover the target frame interval
-        # so the sim advances at real-time speed.
-        for _ in range(self._n_physics_steps):
+
+        # Compute physics steps from actual elapsed wall time so simulation
+        # advances at real-time speed regardless of frame rate jitter.
+        n_steps = max(1, round(dt / self._model.opt.timestep))
+        n_steps = min(n_steps, self._max_physics_steps)
+
+        for _ in range(n_steps):
             self._mujoco.mj_step(self._model, self._data)
         self._renderer.update_scene(self._data, camera=self._camera_arg)
         # Copy the rendered pixels so the renderer buffer can be reused.
@@ -227,8 +244,6 @@ class MujocoSourceAdapter(VideoSourceAdapter):
             or self._renderer is None
         ):
             raise RuntimeError("MuJoCo source not started.")
-
-        self._last_frame_ts = monotonic()
 
         loop = asyncio.get_running_loop()
         frame_rgb = await loop.run_in_executor(self._gl_executor, self._step_and_render)
