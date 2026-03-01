@@ -12,6 +12,8 @@ import argparse
 import asyncio
 import math
 import os
+import re
+import tempfile
 from typing import Any
 
 from _common import compensate_gravity, run_video_service, start_mocap_pump
@@ -171,13 +173,68 @@ def _parse_args() -> argparse.Namespace:
 # ---------------------------------------------------------------------------
 
 
+def _build_fixed_base_model(model: Any, model_path: str) -> Any:
+    """Create a copy of *model* with the freejoint removed.
+
+    The IK solver must not use freejoint DOFs — it would plan base
+    motion that we then discard, leaving biased arm velocities.  By
+    stripping the freejoint the QP only has hinge-joint DOFs to work
+    with, producing correct arm-only solutions.
+    """
+    import mujoco
+
+    tmpdir = tempfile.mkdtemp()
+    xml_path = os.path.join(tmpdir, "compiled.xml")
+    mujoco.mj_saveLastXML(xml_path, model)
+
+    with open(xml_path) as fh:
+        xml = fh.read()
+
+    # Remove the freejoint element (compiled format).
+    xml = xml.replace(
+        '      <joint name="floating_base_joint" type="free"'
+        ' armature="0" frictionloss="0"/>',
+        "",
+    )
+
+    # Resolve mesh directory to an absolute path relative to the
+    # *original* model file so STL files are found when reloading
+    # from the temp directory.
+    model_dir = os.path.dirname(os.path.abspath(model_path))
+    assets_abs = os.path.join(model_dir, "assets").replace(os.sep, "/")
+    xml = re.sub(
+        r'meshdir="[^"]*"',
+        f'meshdir="{assets_abs}/"',
+        xml,
+    )
+
+    # Fix keyframe qpos: remove first 7 values (freejoint pos+quat).
+    match = re.search(r'(<key[^>]*qpos=")([^"]+)(")', xml)
+    if match:
+        vals = match.group(2).split()
+        fixed_qpos = " ".join(vals[7:])
+        xml = (
+            xml[: match.start()]
+            + match.group(1)
+            + fixed_qpos
+            + match.group(3)
+            + xml[match.end() :]
+        )
+
+    return mujoco.MjModel.from_xml_string(xml)
+
+
 def _build_pre_step(
     latest: dict[str, HandFrame | HeadFrame],
+    model_path: str,
 ) -> Any:
     """Build a pre_step callback for G1 arm teleop and active vision.
 
     Uses mink inverse kinematics for 7-DOF arm teleop and direct Euler
     angle mapping for waist-driven active vision from head tracking.
+
+    IK runs on a **fixed-base model** (freejoint stripped) so the
+    solver cannot abuse base translation/rotation to satisfy targets.
     """
     state: dict[str, Any] = {}
 
@@ -193,56 +250,26 @@ def _build_pre_step(
                 print(f"[g1-host] mink not available: {exc}")
                 return
 
+            # Build a fixed-base model for IK (no freejoint DOFs).
+            ik_model = _build_fixed_base_model(model, model_path)
+            print(
+                f"[g1-host] IK model: nq={ik_model.nq} nv={ik_model.nv} "
+                f"(sim model: nq={model.nq} nv={model.nv})"
+            )
+
             # Arm joint names.
             arm_joint_names: list[str] = []
             for prefix in ("left", "right"):
                 for jn in _ARM_JOINT_NAMES:
                     arm_joint_names.append(f"{prefix}_{jn}")
 
-            # Velocity limits for arm + waist joints only.
-            velocity_limits: dict[str, float] = {}
-            for name in arm_joint_names:
-                velocity_limits[name] = np.pi
-            for wn in _WAIST_JOINT_NAMES:
-                velocity_limits[wn] = np.pi
-
-            # Build a mask of velocity DOFs we actually want to move.
-            # The G1 has a freejoint (6 DOFs) + legs + fingers that IK
-            # should not touch.  We let mink solve freely, then zero
-            # out everything except arm + waist before integrating.
-            allowed_nv = set()
-            for name in arm_joint_names:
-                jid = model.joint(name).id
-                nv_start = model.jnt_dofadr[jid]
-                allowed_nv.add(nv_start)
-            for wn in _WAIST_JOINT_NAMES:
-                jid = model.joint(wn).id
-                nv_start = model.jnt_dofadr[jid]
-                allowed_nv.add(nv_start)
-            vel_mask = np.zeros(model.nv, dtype=bool)
-            for idx in allowed_nv:
-                vel_mask[idx] = True
-
-            # Use jnt_qposadr (not joint ID) to index into qpos.
-            # The freejoint uses 7 qpos slots, shifting all subsequent
-            # hinge joints' addresses by +6 from their joint IDs.
-            arm_qpos_adr = np.array(
-                [model.jnt_qposadr[model.joint(n).id] for n in arm_joint_names]
-            )
+            # Actuator IDs on the *real* model for writing ctrl.
             arm_actuator_ids = np.array(
                 [model.actuator(n).id for n in arm_joint_names]
             )
-
             waist_actuator_ids = np.array(
                 [model.actuator(n).id for n in _WAIST_JOINT_NAMES]
             )
-
-            # Waist soft limits for clamping (tighter than XML joint limits).
-            waist_limits = [
-                _WAIST_SOFT_LIMITS[wn] for wn in _WAIST_JOINT_NAMES
-            ]
-
-            # Leg and finger actuator IDs (held at stand keyframe).
             leg_actuator_ids = np.array([
                 model.actuator(f"{prefix}_{suffix}").id
                 for prefix in ("left", "right")
@@ -254,11 +281,29 @@ def _build_pre_step(
                 for suffix in _FINGER_JOINT_SUFFIXES
             ])
 
+            # Joint IDs on the *IK* model (no freejoint → id == qposadr).
+            ik_arm_jnt_ids = np.array(
+                [ik_model.joint(n).id for n in arm_joint_names]
+            )
+
+            # Waist soft limits for clamping (tighter than XML).
+            waist_limits = [
+                _WAIST_SOFT_LIMITS[wn] for wn in _WAIST_JOINT_NAMES
+            ]
+
             # Subtrees for gravity compensation (arm chains only).
             left_subtree = model.body("left_shoulder_pitch_link").id
             right_subtree = model.body("right_shoulder_pitch_link").id
 
-            configuration = mink.Configuration(model)
+            # Set up mink on the fixed-base IK model.
+            ik_data = mujoco.MjData(ik_model)
+            mujoco.mj_resetDataKeyframe(
+                ik_model, ik_data, ik_model.key("stand").id
+            )
+            mujoco.mj_forward(ik_model, ik_data)
+
+            configuration = mink.Configuration(ik_model)
+            configuration.update(ik_data.qpos)
 
             l_ee_task = mink.FrameTask(
                 frame_name="left_ee",
@@ -274,33 +319,28 @@ def _build_pre_step(
                 orientation_cost=1.0,
                 lm_damping=1.0,
             )
-            posture_task = mink.PostureTask(model, cost=1e-1)
+            posture_task = mink.PostureTask(ik_model, cost=1e-1)
 
             tasks = [l_ee_task, r_ee_task, posture_task]
-            limits = [
-                mink.ConfigurationLimit(model=model),
-                mink.VelocityLimit(model, velocity_limits),
-            ]
+            limits = [mink.ConfigurationLimit(model=ik_model)]
 
-            # Reset to stand keyframe.
-            mujoco.mj_resetDataKeyframe(
-                model, data, model.key("stand").id
-            )
-            configuration.update(data.qpos)
-            mujoco.mj_forward(model, data)
             posture_task.set_target_from_configuration(configuration)
             l_ee_task.set_target_from_configuration(configuration)
             r_ee_task.set_target_from_configuration(configuration)
 
-            # Capture initial EE poses for differential teleop.
+            # Reset *real* model to stand keyframe for initial poses.
+            mujoco.mj_resetDataKeyframe(
+                model, data, model.key("stand").id
+            )
+            mujoco.mj_forward(model, data)
+
+            # Capture initial EE poses from the real model.
             l_site_id = model.site("left_ee").id
             r_site_id = model.site("right_ee").id
-
-            # Capture stand keyframe ctrl for legs and fingers.
-            stand_ctrl = data.ctrl.copy()
-
             initial_l_pos = data.site_xpos[l_site_id].copy()
             initial_r_pos = data.site_xpos[r_site_id].copy()
+            stand_ctrl = data.ctrl.copy()
+
             print(
                 f"[g1-host] stand EE poses: "
                 f"left={initial_l_pos} right={initial_r_pos}"
@@ -308,13 +348,13 @@ def _build_pre_step(
 
             state.update(
                 mink=mink,
+                ik_model=ik_model,
                 configuration=configuration,
-                vel_mask=vel_mask,
                 l_ee_task=l_ee_task,
                 r_ee_task=r_ee_task,
                 tasks=tasks,
                 limits=limits,
-                arm_qpos_adr=arm_qpos_adr,
+                ik_arm_jnt_ids=ik_arm_jnt_ids,
                 arm_actuator_ids=arm_actuator_ids,
                 waist_actuator_ids=waist_actuator_ids,
                 waist_limits=waist_limits,
@@ -322,9 +362,13 @@ def _build_pre_step(
                 finger_actuator_ids=finger_actuator_ids,
                 subtree_ids=[left_subtree, right_subtree],
                 initial_l_pos=initial_l_pos,
-                initial_l_rot=data.site_xmat[l_site_id].reshape(3, 3).copy(),
+                initial_l_rot=data.site_xmat[l_site_id].reshape(
+                    3, 3
+                ).copy(),
                 initial_r_pos=initial_r_pos,
-                initial_r_rot=data.site_xmat[r_site_id].reshape(3, 3).copy(),
+                initial_r_rot=data.site_xmat[r_site_id].reshape(
+                    3, 3
+                ).copy(),
                 ref_left_pos=None,
                 ref_left_rot=None,
                 ref_right_pos=None,
@@ -342,7 +386,8 @@ def _build_pre_step(
         tasks = state["tasks"]
         limits = state["limits"]
 
-        configuration.update(data.qpos)
+        # Sync IK model qpos from the real sim (skip freejoint).
+        configuration.update(data.qpos[7:])
 
         dt = 1.0 / 30.0
 
@@ -363,9 +408,9 @@ def _build_pre_step(
 
             waist_limits = state["waist_limits"]
             angles = [
-                float(np.clip(yaw, waist_limits[0][0], waist_limits[0][1])),
-                float(np.clip(roll, waist_limits[1][0], waist_limits[1][1])),
-                float(np.clip(pitch, waist_limits[2][0], waist_limits[2][1])),
+                float(np.clip(yaw, *waist_limits[0])),
+                float(np.clip(roll, *waist_limits[1])),
+                float(np.clip(pitch, *waist_limits[2])),
             ]
             data.ctrl[state["waist_actuator_ids"]] = angles
 
@@ -373,7 +418,7 @@ def _build_pre_step(
         left = latest.get("Left")
         right = latest.get("Right")
         state["_debug_count"] += 1
-        _debug = state["_debug_count"] % 120 == 0  # log every ~2s
+        _debug = state["_debug_count"] % 120 == 0
 
         if isinstance(left, HandFrame):
             w = left.wrist
@@ -401,7 +446,10 @@ def _build_pre_step(
                 )
             )
             if _debug:
-                print(f"[g1-host] L delta={delta_pos} target={target_pos}")
+                print(
+                    f"[g1-host] L delta={delta_pos} "
+                    f"target={target_pos}"
+                )
 
         if isinstance(right, HandFrame):
             w = right.wrist
@@ -429,12 +477,12 @@ def _build_pre_step(
                 )
             )
             if _debug:
-                print(f"[g1-host] R delta={delta_pos} target={target_pos}")
+                print(
+                    f"[g1-host] R delta={delta_pos} "
+                    f"target={target_pos}"
+                )
 
-        # Solve IK (2 iterations for small per-frame deltas).
-        # Mask velocity to only arm + waist DOFs so IK can't move
-        # the freejoint, legs, or fingers.
-        mask = state["vel_mask"]
+        # Solve IK on the fixed-base model (no freejoint DOFs).
         for _ in range(2):
             vel = mink.solve_ik(
                 configuration,
@@ -444,23 +492,13 @@ def _build_pre_step(
                 limits=limits,
                 damping=1e-5,
             )
-            vel[~mask] = 0.0
             configuration.integrate_inplace(vel, dt)
 
-            l_err = l_ee_task.compute_error(configuration)
-            r_err = r_ee_task.compute_error(configuration)
-            if (
-                np.linalg.norm(l_err[:3]) <= 5e-3
-                and np.linalg.norm(l_err[3:]) <= 5e-3
-                and np.linalg.norm(r_err[:3]) <= 5e-3
-                and np.linalg.norm(r_err[3:]) <= 5e-3
-            ):
-                break
-
-        # Write arm joint angles from IK solution.
-        arm_qpos_adr = state["arm_qpos_adr"]
-        arm_actuator_ids = state["arm_actuator_ids"]
-        data.ctrl[arm_actuator_ids] = configuration.q[arm_qpos_adr]
+        # Write arm joint angles from IK solution to real model.
+        ik_arm_jnt_ids = state["ik_arm_jnt_ids"]
+        data.ctrl[state["arm_actuator_ids"]] = (
+            configuration.q[ik_arm_jnt_ids]
+        )
 
         # Hold legs and fingers at stand keyframe.
         stand_ctrl = state["stand_ctrl"]
@@ -510,7 +548,7 @@ async def _run() -> int:
     pre_step = None
     if not args.disable_mocap_tcp:
         latest = start_mocap_pump(args.mocap_tcp_host, args.mocap_tcp_port)
-        pre_step = _build_pre_step(latest)
+        pre_step = _build_pre_step(latest, args.mj_model)
 
     perf_hook = _build_perf_hook() if args.perf else None
 
