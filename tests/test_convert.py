@@ -3,6 +3,8 @@ from __future__ import annotations
 import math
 
 from hand_tracking_sdk import (
+    BASIS_UNITY_LEFT_TO_FLU,
+    BASIS_UNITY_LEFT_TO_RFU,
     HandFrame,
     HandLandmarks,
     HandSide,
@@ -14,6 +16,9 @@ from hand_tracking_sdk import (
     convert_landmarks_unity_left_to_right,
     convert_wrist_pose_unity_left_to_right,
     unity_left_to_flu_position,
+    unity_left_to_flu_rotation_matrix,
+    unity_left_to_rfu_position,
+    unity_left_to_rfu_rotation_matrix,
     unity_left_to_right_position,
     unity_left_to_right_quaternion,
     unity_right_to_flu_position,
@@ -112,12 +117,6 @@ _IDENTITY: tuple[tuple[float, float, float], ...] = (
     (0.0, 0.0, 1.0),
 )
 
-_ALOHA_BASIS: tuple[tuple[float, float, float], ...] = (
-    (1.0, 0.0, 0.0),
-    (0.0, 0.0, 1.0),
-    (0.0, 1.0, 0.0),
-)
-
 
 def test_transpose() -> None:
     m = ((1.0, 2.0, 3.0), (4.0, 5.0, 6.0), (7.0, 8.0, 9.0))
@@ -130,36 +129,52 @@ def test_basis_transform_position_identity() -> None:
     assert basis_transform_position(pos, _IDENTITY) == pos
 
 
-def test_basis_transform_position_aloha() -> None:
-    """ALOHA basis maps (x,y,z) → (x, z, y)."""
-    assert basis_transform_position((1.0, 2.0, 3.0), _ALOHA_BASIS) == (1.0, 3.0, 2.0)
+def test_basis_transform_position_rfu() -> None:
+    assert basis_transform_position((1.0, 2.0, 3.0), BASIS_UNITY_LEFT_TO_RFU) == (1.0, 3.0, 2.0)
 
 
 def test_basis_transform_rotation_identity() -> None:
-    """Identity basis preserves the quaternion."""
     result = basis_transform_rotation(0.0, 0.0, 0.0, 1.0, _IDENTITY)
     assert _quat_equivalent(result, (0.0, 0.0, 0.0, 1.0))
 
 
-def test_basis_transform_rotation_matrix_aloha() -> None:
-    """ALOHA basis applied to identity rotation gives identity matrix."""
-    result = basis_transform_rotation_matrix(0.0, 0.0, 0.0, 1.0, _ALOHA_BASIS)
-    # Identity rotation through any basis should remain identity.
+def test_basis_transform_rotation_matrix_rfu_identity() -> None:
+    result = basis_transform_rotation_matrix(0.0, 0.0, 0.0, 1.0, BASIS_UNITY_LEFT_TO_RFU)
     for i in range(3):
         for j in range(3):
             expected = 1.0 if i == j else 0.0
             assert math.isclose(result[i][j], expected, abs_tol=1e-9)
 
 
-def test_basis_transform_rotation_aloha_90deg_x() -> None:
-    """90° rotation around X in Unity, transformed to ALOHA frame.
-
-    ALOHA basis swaps Y↔Z, which reverses the rotation direction
-    around X (right-hand rule).  So +90° around X becomes -90°.
-    """
+def test_basis_transform_rotation_rfu_90deg_x() -> None:
     angle = math.pi / 2.0
     qx = math.sin(angle / 2.0)
     qw = math.cos(angle / 2.0)
-    result = basis_transform_rotation(qx, 0.0, 0.0, qw, _ALOHA_BASIS)
-    # Y↔Z swap reverses handedness around X → sign flip on qx.
+    result = basis_transform_rotation(qx, 0.0, 0.0, qw, BASIS_UNITY_LEFT_TO_RFU)
     assert _quat_equivalent(result, (-qx, 0.0, 0.0, qw))
+
+
+def test_unity_left_to_rfu_position_wrapper() -> None:
+    assert unity_left_to_rfu_position(1.0, 2.0, 3.0) == (1.0, 3.0, 2.0)
+
+
+def test_unity_left_to_rfu_rotation_matrix_wrapper_identity() -> None:
+    result = unity_left_to_rfu_rotation_matrix(0.0, 0.0, 0.0, 1.0)
+    for i in range(3):
+        for j in range(3):
+            expected = 1.0 if i == j else 0.0
+            assert math.isclose(result[i][j], expected, abs_tol=1e-9)
+
+
+def test_unity_left_to_flu_rotation_matrix_wrapper_identity() -> None:
+    result = unity_left_to_flu_rotation_matrix(0.0, 0.0, 0.0, 1.0)
+    for i in range(3):
+        for j in range(3):
+            expected = 1.0 if i == j else 0.0
+            assert math.isclose(result[i][j], expected, abs_tol=1e-9)
+
+
+def test_basis_unity_left_to_flu_constant_matches_position_helper() -> None:
+    assert basis_transform_position((1.0, 2.0, 3.0), BASIS_UNITY_LEFT_TO_FLU) == unity_left_to_flu_position(
+        1.0, 2.0, 3.0
+    )
