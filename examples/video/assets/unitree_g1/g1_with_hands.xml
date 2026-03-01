@@ -195,6 +195,7 @@
             <geom pos="0.0039635 0 -0.044" class="visual" material="black" mesh="head_link"/>
             <geom pos="0.0039635 0 -0.044" class="collision" mesh="head_link"/>
             <site name="imu_in_torso" size="0.01" pos="-0.03959 -0.00224 0.14792"/>
+            <camera name="head_cam" pos="0.20 0 0.30" quat="0.5 0.5 -0.5 -0.5" fovy="90"/>
             <body name="left_shoulder_pitch_link" pos="0.0039563 0.10022 0.24778"
               quat="0.990264 0.139201 1.38722e-05 -9.86868e-05">
               <inertial pos="0 0.035892 -0.011628" quat="0.654152 0.0130458 -0.326267 0.68225" mass="0.718"
@@ -243,6 +244,7 @@
                           <geom class="collision" mesh="left_wrist_yaw_link"/>
                           <geom pos="0.0415 0.003 0" quat="1 0 0 0" class="visual" mesh="left_hand_palm_link"/>
                           <geom pos="0.0415 0.003 0" quat="1 0 0 0" class="collision" mesh="left_hand_palm_link"/>
+                          <site name="left_ee" pos="0.09 0.003 0" class="g1"/>
                           <body name="left_hand_thumb_0_link" pos="0.067 0.003 0">
                             <inertial pos="-0.000884246 -0.00863407 0.000944293"
                               quat="0.462991 0.643965 -0.460173 0.398986" mass="0.0862366"
@@ -359,6 +361,7 @@
                           <geom class="collision" mesh="right_wrist_yaw_link"/>
                           <geom pos="0.0415 -0.003 0" quat="1 0 0 0" class="visual" mesh="right_hand_palm_link"/>
                           <geom pos="0.0415 -0.003 0" quat="1 0 0 0" class="collision" mesh="right_hand_palm_link"/>
+                          <site name="right_ee" pos="0.09 -0.003 0" class="g1"/>
                           <body name="right_hand_thumb_0_link" pos="0.067 -0.003 0">
                             <inertial pos="-0.000884246 0.00863407 0.000944293"
                               quat="0.643965 0.462991 -0.398986 0.460173" mass="0.0862366"

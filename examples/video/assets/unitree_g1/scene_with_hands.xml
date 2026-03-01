@@ -6,7 +6,7 @@
   <visual>
     <headlight diffuse="0.6 0.6 0.6" ambient="0.1 0.1 0.1" specular="0.9 0.9 0.9"/>
     <rgba haze="0.15 0.25 0.35 1"/>
-    <global azimuth="140" elevation="-20"/>
+    <global azimuth="140" elevation="-20" offwidth="1920" offheight="1080"/>
   </visual>
 
   <asset>
@@ -18,5 +18,6 @@
 
   <worldbody>
     <geom name="floor" size="0 0 0.05" type="plane" material="groundplane"/>
+    <camera name="overview" pos="1.5 -1.0 1.2" xyaxes="0.6 0.8 0 -0.2 0.15 0.97" fovy="60"/>
   </worldbody>
 </mujoco>
