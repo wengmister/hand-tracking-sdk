@@ -8,19 +8,19 @@
 
   <worldbody>
     <geom name="floor" size="2 2 0.05" type="plane" material="left_groundplane" pos="0 0 0"/>
-    <camera name="overview" pos="0 -0.5 0.35" xyaxes="1 0 0 0 0.574 0.819" fovy="60"/>
+    <camera name="overview" pos="0 -0.5 0.5" xyaxes="1 0 0 0 0.574 0.819" fovy="60"/>
   </worldbody>
 
   <keyframe>
     <!-- Per hand (18 DOF): pos_x pos_y pos_z  rot_x rot_y rot_z  12×finger -->
-    <!-- Rotation (π, π/2, 0) = palms down, fingers pointing +Y (away from camera) -->
+    <!-- Rotation is (0,0,0): palms-down orientation is baked into the orient body quat -->
     <key name="home"
       qpos="
-        0.12 0 0.05  3.14159 1.5708 0  0 0 0 0 0 0 0 0 0 0 0 0
-       -0.12 0 0.05  3.14159 1.5708 0  0 0 0 0 0 0 0 0 0 0 0 0"
+        0.12 0 0.05  0 0 0  0 0 0 0 0 0 0 0 0 0 0 0
+       -0.12 0 0.05  0 0 0  0 0 0 0 0 0 0 0 0 0 0 0"
       ctrl="
-        0.12 0 0.05  3.14159 1.5708 0  0 0 0 0 0 0 0 0 0 0 0 0
-       -0.12 0 0.05  3.14159 1.5708 0  0 0 0 0 0 0 0 0 0 0 0 0"
+        0.12 0 0.05  0 0 0  0 0 0 0 0 0 0 0 0 0 0 0
+       -0.12 0 0.05  0 0 0  0 0 0 0 0 0 0 0 0 0 0 0"
     />
   </keyframe>
 </mujoco>

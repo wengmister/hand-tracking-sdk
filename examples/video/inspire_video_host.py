@@ -210,7 +210,6 @@ def _build_pre_step(
             base_ids: dict[str, list[int]] = {}
             finger_info: dict[str, list[tuple[int, float, float]]] = {}
             initial_pos: dict[str, Any] = {}
-            initial_rot: dict[str, Any] = {}
 
             for side in ("left", "right"):
                 ids = [
@@ -218,22 +217,10 @@ def _build_pre_step(
                 ]
                 base_ids[side] = ids
 
-                # Read home pose from keyframe ctrl values.
+                # Read home position from keyframe ctrl values.
                 initial_pos[side] = np.array([
                     data.ctrl[ids[0]], data.ctrl[ids[1]], data.ctrl[ids[2]],
                 ])
-
-                # Reconstruct home rotation matrix from Euler ctrl values.
-                a = float(data.ctrl[ids[3]])
-                b = float(data.ctrl[ids[4]])
-                g = float(data.ctrl[ids[5]])
-                ca, sa = math.cos(a), math.sin(a)
-                cb, sb = math.cos(b), math.sin(b)
-                cg, sg = math.cos(g), math.sin(g)
-                rx = np.array([[1, 0, 0], [0, ca, -sa], [0, sa, ca]])
-                ry = np.array([[cb, 0, sb], [0, 1, 0], [-sb, 0, cb]])
-                rz = np.array([[cg, -sg, 0], [sg, cg, 0], [0, 0, 1]])
-                initial_rot[side] = rx @ ry @ rz
 
                 info: list[tuple[int, float, float]] = []
                 for joints in _FINGER_JOINTS.values():
@@ -255,7 +242,6 @@ def _build_pre_step(
                 base_ids=base_ids,
                 finger_info=finger_info,
                 initial_pos=initial_pos,
-                initial_rot=initial_rot,
                 cam_id=cam_id,
                 cam_default_pos=cam_default_pos,
                 cam_default_rot=cam_default_rot,
@@ -289,7 +275,6 @@ def _build_pre_step(
 
             ref_pos, ref_rot = state[ref_key]
             home_pos = state["initial_pos"][side]
-            home_rot = state["initial_rot"][side]
 
             # Position: home + delta from first Quest frame.
             target_pos = home_pos + (cur_pos - ref_pos)
@@ -297,10 +282,12 @@ def _build_pre_step(
             data.ctrl[ids[1]] = target_pos[1]
             data.ctrl[ids[2]] = target_pos[2]
 
-            # Rotation: delta composed with home rotation.
+            # Rotation: the palm-down orientation is baked into the orient body
+            # quat in the XML, so the hinge joints only represent the rotation
+            # delta from the user's initial hand pose.  Near identity the XYZ
+            # Euler decomposition is well-conditioned (β ≈ 0, far from ±π/2).
             delta_rot = cur_rot @ ref_rot.T
-            target_rot = delta_rot @ home_rot
-            alpha, beta, gamma = _decompose_xyz_euler(target_rot)
+            alpha, beta, gamma = _decompose_xyz_euler(delta_rot)
             data.ctrl[ids[3]] = alpha
             data.ctrl[ids[4]] = beta
             data.ctrl[ids[5]] = gamma
