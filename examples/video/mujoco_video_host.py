@@ -10,60 +10,26 @@ from __future__ import annotations
 import argparse
 import asyncio
 import os
-from threading import Thread
 from typing import Any
 
-from _common import run_video_service
+from _common import compensate_gravity, run_video_service, start_mocap_pump
 
-from hand_tracking_sdk.client import (
-    ErrorPolicy,
-    HTSClient,
-    HTSClientConfig,
-    StreamOutput,
-    TransportMode,
-)
+from hand_tracking_sdk.convert import basis_transform_position, basis_transform_rotation_matrix
 from hand_tracking_sdk.frame import HandFrame, HeadFrame
 from hand_tracking_sdk.teleop import GripConfig, grip_value
 from hand_tracking_sdk.video.service import VideoServiceConfig
 
 _DEFAULT_MODEL = os.path.join(os.path.dirname(__file__), "assets", "aloha", "scene.xml")
 
-
-# ---------------------------------------------------------------------------
-# Unity left-handed → ALOHA sim world frame coordinate helpers
-# ---------------------------------------------------------------------------
-
-
-def _wrist_to_sim_pos(wrist: Any) -> Any:
-    """Convert Unity left-handed wrist position to ALOHA sim world frame.
-
-    Unity left-handed: x=right, y=up, z=forward.
-    ALOHA sim world:   x=right (screen), y=forward (into screen), z=up.
-    Mapping: (x,y,z) → (x, z, y).
-    """
-    import numpy as np
-
-    return np.array([wrist.x, wrist.z, wrist.y])
-
-
-def _wrist_to_sim_rotmat(wrist: Any) -> Any:
-    """Convert Unity left-handed wrist quaternion to ALOHA sim 3x3 rotation matrix.
-
-    WristPose stores quaternion as (qx, qy, qz, qw) — xyzw order.
-    The basis transform maps Unity-left vectors to the ALOHA sim world
-    frame.  Both arms use the same world-frame mapping — IK handles the
-    per-arm kinematics.
-    Rotation matrices transform as: R_sim = T @ R_unity @ T^T.
-    """
-    import mujoco
-    import numpy as np
-
-    basis = np.array([[1, 0, 0], [0, 0, 1], [0, 1, 0]], dtype=np.float64)
-    rot = np.empty(9)
-    # mju_quat2Mat expects wxyz order.
-    mujoco.mju_quat2Mat(rot, [wrist.qw, wrist.qx, wrist.qy, wrist.qz])
-    return basis @ rot.reshape(3, 3) @ basis.T
-
+# Basis matrix mapping Unity left-handed → ALOHA sim world frame.
+# Unity left-handed: x=right, y=up, z=forward.
+# ALOHA sim world:   x=right, y=forward (into screen), z=up.
+# Mapping: (x,y,z) → (x, z, y).
+_ALOHA_BASIS = (
+    (1.0, 0.0, 0.0),
+    (0.0, 0.0, 1.0),
+    (0.0, 1.0, 0.0),
+)
 
 # ALOHA joint names per arm (6-DOF, no gripper).
 _ARM_JOINT_NAMES = [
@@ -124,65 +90,6 @@ def _parse_args() -> argparse.Namespace:
     )
     parser.add_argument("--verbose", action="store_true", help="Enable verbose logs.")
     return parser.parse_args()
-
-
-# ---------------------------------------------------------------------------
-# Mocap ingestion via HTSClient in a daemon thread
-# ---------------------------------------------------------------------------
-
-
-def _start_mocap_pump(
-    host: str,
-    port: int,
-) -> dict[str, HandFrame | HeadFrame]:
-    """Start a background thread that ingests mocap telemetry via HTSClient.
-
-    Returns a shared dict keyed by ``"Left"`` / ``"Right"`` / ``"Head"``
-    whose values are the latest frames.  The dict is updated from a daemon
-    thread so reads from the MuJoCo render thread are lock-free (dict
-    value assignment is atomic in CPython).
-    """
-    latest: dict[str, HandFrame | HeadFrame] = {}
-
-    client = HTSClient(
-        HTSClientConfig(
-            transport_mode=TransportMode.TCP_SERVER,
-            host=host,
-            port=port,
-            output=StreamOutput.FRAMES,
-            error_policy=ErrorPolicy.TOLERANT,
-        )
-    )
-
-    def _pump() -> None:
-        for event in client.iter_events():
-            latest[event.side.value] = event
-
-    thread = Thread(target=_pump, daemon=True)
-    thread.start()
-    return latest
-
-
-# ---------------------------------------------------------------------------
-# Gravity compensation (from mink ALOHA example)
-# ---------------------------------------------------------------------------
-
-
-def _compensate_gravity(
-    model: Any,
-    data: Any,
-    subtree_ids: list[int],
-) -> None:
-    """Apply gravity compensation forces to the given subtrees."""
-    import mujoco
-    import numpy as np
-
-    data.qfrc_applied[:] = 0.0
-    jac = np.empty((3, model.nv))
-    for sid in subtree_ids:
-        total_mass = model.body_subtreemass[sid]
-        mujoco.mj_jacSubtreeCom(model, data, jac, sid)
-        data.qfrc_applied[:] -= model.opt.gravity * total_mass @ jac
 
 
 # ---------------------------------------------------------------------------
@@ -320,8 +227,11 @@ def _build_pre_step(
         # from Unity left-handed to FLU before computing deltas so they
         # align with the MuJoCo world frame.
         if isinstance(left, HandFrame):
-            cur_pos = _wrist_to_sim_pos(left.wrist)
-            cur_rot = _wrist_to_sim_rotmat(left.wrist)
+            w = left.wrist
+            cur_pos = np.array(basis_transform_position((w.x, w.y, w.z), _ALOHA_BASIS))
+            cur_rot = np.array(
+                basis_transform_rotation_matrix(w.qx, w.qy, w.qz, w.qw, _ALOHA_BASIS)
+            )
             if state["ref_left_pos"] is None:
                 state["ref_left_pos"] = cur_pos.copy()
                 state["ref_left_rot"] = cur_rot.copy()
@@ -340,8 +250,11 @@ def _build_pre_step(
             data.ctrl[state["left_grip_id"]] = grip_value(left, grip_config)
 
         if isinstance(right, HandFrame):
-            cur_pos = _wrist_to_sim_pos(right.wrist)
-            cur_rot = _wrist_to_sim_rotmat(right.wrist)
+            w = right.wrist
+            cur_pos = np.array(basis_transform_position((w.x, w.y, w.z), _ALOHA_BASIS))
+            cur_rot = np.array(
+                basis_transform_rotation_matrix(w.qx, w.qy, w.qz, w.qw, _ALOHA_BASIS)
+            )
             if state["ref_right_pos"] is None:
                 state["ref_right_pos"] = cur_pos.copy()
                 state["ref_right_rot"] = cur_rot.copy()
@@ -383,7 +296,7 @@ def _build_pre_step(
 
         # Write joint angles and apply gravity compensation.
         data.ctrl[actuator_ids] = configuration.q[dof_ids]
-        _compensate_gravity(model, data, state["subtree_ids"])
+        compensate_gravity(model, data, state["subtree_ids"])
 
     return pre_step
 
@@ -394,7 +307,7 @@ async def _run() -> int:
     # Set up mocap ingestion and pre_step hook when mocap is enabled.
     pre_step = None
     if not args.disable_mocap_tcp:
-        latest = _start_mocap_pump(args.mocap_tcp_host, args.mocap_tcp_port)
+        latest = start_mocap_pump(args.mocap_tcp_host, args.mocap_tcp_port)
         pre_step = _build_pre_step(
             latest,
             left_gripper_actuator=args.left_gripper_actuator,
