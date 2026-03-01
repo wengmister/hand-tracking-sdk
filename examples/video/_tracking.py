@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from typing import Any
 
 from hand_tracking_sdk.frame import HeadFrame
@@ -18,8 +19,13 @@ class RelativeHeadCamera:
         self,
         model: Any,
         cam_id: int,
-        basis: tuple[tuple[float, float, float], ...],
+        basis: tuple[tuple[float, float, float], ...] | None = None,
         *,
+        position_transform: Callable[[float, float, float], tuple[float, float, float]] | None = None,
+        rotation_matrix_transform: Callable[
+            [float, float, float, float], tuple[tuple[float, float, float], ...]
+        ]
+        | None = None,
         track_position: bool = False,
         head_rot_correction: Any | None = None,
     ) -> None:
@@ -28,6 +34,8 @@ class RelativeHeadCamera:
 
         self._cam_id = cam_id
         self._basis = basis
+        self._position_transform = position_transform
+        self._rotation_matrix_transform = rotation_matrix_transform
         self._track_position = track_position
         self._head_rot_correction = head_rot_correction
 
@@ -50,18 +58,30 @@ class RelativeHeadCamera:
         )
 
         h = head_frame.head
-        head_rot = np.array(
-            basis_transform_rotation_matrix(h.qx, h.qy, h.qz, h.qw, self._basis)
-        )
+        if self._rotation_matrix_transform is not None:
+            head_rot = np.array(
+                self._rotation_matrix_transform(h.qx, h.qy, h.qz, h.qw)
+            )
+        elif self._basis is not None:
+            head_rot = np.array(
+                basis_transform_rotation_matrix(h.qx, h.qy, h.qz, h.qw, self._basis)
+            )
+        else:
+            raise ValueError("RelativeHeadCamera requires basis or rotation_matrix_transform.")
         if self._head_rot_correction is not None:
             head_rot = head_rot @ self._head_rot_correction
 
         if self._ref_rot is None:
             self._ref_rot = head_rot.copy()
             if self._track_position:
-                head_pos = np.array(
-                    basis_transform_position((h.x, h.y, h.z), self._basis)
-                )
+                if self._position_transform is not None:
+                    head_pos = np.array(self._position_transform(h.x, h.y, h.z))
+                elif self._basis is not None:
+                    head_pos = np.array(
+                        basis_transform_position((h.x, h.y, h.z), self._basis)
+                    )
+                else:
+                    raise ValueError("RelativeHeadCamera requires basis or position_transform.")
                 self._ref_pos = head_pos.copy()
             return
 
@@ -72,9 +92,14 @@ class RelativeHeadCamera:
         model.cam_quat[self._cam_id] = cam_quat
 
         if self._track_position:
-            head_pos = np.array(
-                basis_transform_position((h.x, h.y, h.z), self._basis)
-            )
+            if self._position_transform is not None:
+                head_pos = np.array(self._position_transform(h.x, h.y, h.z))
+            elif self._basis is not None:
+                head_pos = np.array(
+                    basis_transform_position((h.x, h.y, h.z), self._basis)
+                )
+            else:
+                raise ValueError("RelativeHeadCamera requires basis or position_transform.")
             model.cam_pos[self._cam_id] = self._default_pos + (head_pos - self._ref_pos)
 
 
@@ -87,11 +112,19 @@ class RelativeWristTracker:
 
     def __init__(
         self,
-        basis: tuple[tuple[float, float, float], ...],
+        basis: tuple[tuple[float, float, float], ...] | None,
         home_pos: Any,
         home_rot: Any,
+        *,
+        position_transform: Callable[[float, float, float], tuple[float, float, float]] | None = None,
+        rotation_matrix_transform: Callable[
+            [float, float, float, float], tuple[tuple[float, float, float], ...]
+        ]
+        | None = None,
     ) -> None:
         self._basis = basis
+        self._position_transform = position_transform
+        self._rotation_matrix_transform = rotation_matrix_transform
         self._home_pos = home_pos
         self._home_rot = home_rot
         self._ref_pos: Any | None = None
@@ -109,14 +142,27 @@ class RelativeWristTracker:
             basis_transform_rotation_matrix,
         )
 
-        cur_pos = np.array(
-            basis_transform_position((wrist.x, wrist.y, wrist.z), self._basis)
-        )
-        cur_rot = np.array(
-            basis_transform_rotation_matrix(
-                wrist.qx, wrist.qy, wrist.qz, wrist.qw, self._basis
+        if self._position_transform is not None:
+            cur_pos = np.array(self._position_transform(wrist.x, wrist.y, wrist.z))
+        elif self._basis is not None:
+            cur_pos = np.array(
+                basis_transform_position((wrist.x, wrist.y, wrist.z), self._basis)
             )
-        )
+        else:
+            raise ValueError("RelativeWristTracker requires basis or position_transform.")
+
+        if self._rotation_matrix_transform is not None:
+            cur_rot = np.array(
+                self._rotation_matrix_transform(wrist.qx, wrist.qy, wrist.qz, wrist.qw)
+            )
+        elif self._basis is not None:
+            cur_rot = np.array(
+                basis_transform_rotation_matrix(
+                    wrist.qx, wrist.qy, wrist.qz, wrist.qw, self._basis
+                )
+            )
+        else:
+            raise ValueError("RelativeWristTracker requires basis or rotation_matrix_transform.")
         if self._ref_pos is None:
             self._ref_pos = cur_pos.copy()
             self._ref_rot = cur_rot.copy()

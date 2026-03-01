@@ -15,17 +15,14 @@ from typing import Any
 from _common import build_base_parser, compensate_gravity, run_mujoco_host
 from _tracking import RelativeHeadCamera, RelativeWristTracker
 
-from hand_tracking_sdk.convert import BASIS_UNITY_LEFT_TO_RFU
+from hand_tracking_sdk.convert import (
+    unity_left_to_rfu_position,
+    unity_left_to_rfu_rotation_matrix,
+)
 from hand_tracking_sdk.frame import HandFrame, HeadFrame
 from hand_tracking_sdk.teleop import GripConfig, grip_value
 
 _DEFAULT_MODEL = os.path.join(os.path.dirname(__file__), "assets", "aloha", "scene.xml")
-
-# Basis matrix mapping Unity left-handed → ALOHA sim world frame.
-# Unity left-handed: x=right, y=up, z=forward.
-# ALOHA sim world:   x=right, y=forward (into screen), z=up.
-# Mapping: (x,y,z) → (x, z, y).
-_ALOHA_BASIS = BASIS_UNITY_LEFT_TO_RFU
 
 # ALOHA joint names per arm (6-DOF, no gripper).
 _ARM_JOINT_NAMES = [
@@ -152,7 +149,12 @@ def _build_pre_step(
             l_site_id = model.site("left/gripper").id
             r_site_id = model.site("right/gripper").id
 
-            head_cam = RelativeHeadCamera(model, model.camera(camera_name).id, _ALOHA_BASIS)
+            head_cam = RelativeHeadCamera(
+                model,
+                model.camera(camera_name).id,
+                position_transform=unity_left_to_rfu_position,
+                rotation_matrix_transform=unity_left_to_rfu_rotation_matrix,
+            )
 
             state.update(
                 mink=mink,
@@ -168,14 +170,18 @@ def _build_pre_step(
                 subtree_ids=[left_subtree, right_subtree],
                 head_cam=head_cam,
                 left_tracker=RelativeWristTracker(
-                    _ALOHA_BASIS,
+                    None,
                     data.site_xpos[l_site_id].copy(),
                     data.site_xmat[l_site_id].reshape(3, 3).copy(),
+                    position_transform=unity_left_to_rfu_position,
+                    rotation_matrix_transform=unity_left_to_rfu_rotation_matrix,
                 ),
                 right_tracker=RelativeWristTracker(
-                    _ALOHA_BASIS,
+                    None,
                     data.site_xpos[r_site_id].copy(),
                     data.site_xmat[r_site_id].reshape(3, 3).copy(),
+                    position_transform=unity_left_to_rfu_position,
+                    rotation_matrix_transform=unity_left_to_rfu_rotation_matrix,
                 ),
             )
 

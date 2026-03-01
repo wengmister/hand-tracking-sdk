@@ -18,15 +18,15 @@ from _common import build_perf_hook, run_video_service, start_mocap_pump
 from _retarget import MujocoVectorRetargeter, default_tasks
 from _tracking import RelativeHeadCamera, RelativeWristTracker
 
-from hand_tracking_sdk.convert import BASIS_UNITY_LEFT_TO_RFU
+from hand_tracking_sdk.convert import (
+    unity_left_to_rfu_position,
+    unity_left_to_rfu_rotation_matrix,
+)
 from hand_tracking_sdk.frame import HandFrame, HeadFrame
 from hand_tracking_sdk.models import JointName
 from hand_tracking_sdk.video.service import VideoServiceConfig
 
 _DEFAULT_MODEL = os.path.join(os.path.dirname(__file__), "assets", "inspire", "scene_bimanual.xml")
-
-# Unity left-handed (x right, y up, z forward) -> MuJoCo (x right, y forward, z up).
-_INSPIRE_BASIS = BASIS_UNITY_LEFT_TO_RFU
 
 _SIDE_CONFIG: dict[str, dict[str, Any]] = {
     "left": {
@@ -139,7 +139,7 @@ def _parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--motion-smoothing",
         type=float,
-        default=0.25,
+        default=0.75,
         help="Exponential smoothing alpha for wrist pose targets (0-1).",
     )
     parser.add_argument("--verbose", action="store_true", help="Enable verbose logs.")
@@ -178,7 +178,8 @@ def _build_pre_step(
             state["head_tracker"] = RelativeHeadCamera(
                 model,
                 cam_id,
-                _INSPIRE_BASIS,
+                position_transform=unity_left_to_rfu_position,
+                rotation_matrix_transform=unity_left_to_rfu_rotation_matrix,
                 track_position=True,
                 head_rot_correction=flip_y_180,
             )
@@ -191,7 +192,13 @@ def _build_pre_step(
                     data.ctrl[base_ids[1]],
                     data.ctrl[base_ids[2]],
                 ])
-                wrist_tracker = RelativeWristTracker(_INSPIRE_BASIS, home_pos, np.eye(3))
+                wrist_tracker = RelativeWristTracker(
+                    None,
+                    home_pos,
+                    np.eye(3),
+                    position_transform=unity_left_to_rfu_position,
+                    rotation_matrix_transform=unity_left_to_rfu_rotation_matrix,
+                )
 
                 finger_actuator_ids = []
                 for jname in cfg["finger_joints"]:
@@ -203,7 +210,8 @@ def _build_pre_step(
                     joint_names=cfg["finger_joints"],
                     site_by_joint=cfg["site_by_joint"],
                     tasks=default_tasks(),
-                    basis=_INSPIRE_BASIS,
+                    position_transform=unity_left_to_rfu_position,
+                    rotation_matrix_transform=unity_left_to_rfu_rotation_matrix,
                     damping=damping,
                     step_size=step_size,
                     max_iters=max_iters,

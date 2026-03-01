@@ -15,7 +15,7 @@ from typing import Any, Callable, Mapping
 
 import numpy as np
 
-from hand_tracking_sdk.convert import basis_transform_position, basis_transform_rotation_matrix
+from hand_tracking_sdk.convert import basis_transform_rotation_matrix
 from hand_tracking_sdk.constants import STREAMED_JOINT_NAMES
 from hand_tracking_sdk.frame import HandFrame
 from hand_tracking_sdk.models import HandLandmarks, HandSide, JointName, WristPose
@@ -92,7 +92,11 @@ class MujocoVectorRetargeter:
         site_by_joint: Mapping[PointKey, str] | None = None,
         hand_spec: RobotHandSpec | None = None,
         tasks: list[VectorTask] | None = None,
-        basis: tuple[tuple[float, float, float], ...] | None = None,
+        position_transform: Callable[[float, float, float], tuple[float, float, float]] | None = None,
+        rotation_matrix_transform: Callable[
+            [float, float, float, float], tuple[tuple[float, float, float], ...]
+        ]
+        | None = None,
         damping: float = 1e-4,
         step_size: float = 1.0,
         max_iters: int = 8,
@@ -110,7 +114,8 @@ class MujocoVectorRetargeter:
         - site_by_joint: mapping from point label -> MuJoCo site name
         - hand_spec: optional convenience bundle for joint/site/task mapping
         - tasks: vector tasks; defaults to :func:`default_tasks`
-        - basis: optional basis matrix for Unity->MuJoCo position transform
+        - position_transform: explicit position transform callback
+        - rotation_matrix_transform: explicit quaternion->rotation callback
         - damping: Levenberg-Marquardt damping
         - step_size: global step scale for each GN update
         - max_iters: iterations per solve call
@@ -138,7 +143,8 @@ class MujocoVectorRetargeter:
             raise ValueError("Provide (joint_names + site_by_joint) or hand_spec.")
 
         self.tasks = tasks or default_tasks()
-        self.basis = basis
+        self._position_transform = position_transform
+        self._rotation_matrix_transform = rotation_matrix_transform
         self.damping = float(damping)
         self.step_size = float(step_size)
         self.max_iters = int(max_iters)
@@ -317,19 +323,27 @@ class MujocoVectorRetargeter:
     def _frame_joint(self, frame: HandFrame, name: PointKey) -> np.ndarray:
         p = self._raw_frame_point(frame, name)
         if self.landmarks_wrist_relative:
-            # HTS landmarks are wrist-relative vectors. Convert basis, then rotate
+            # HTS landmarks are wrist-relative vectors. Transform coordinates, then rotate
             # by wrist orientation so the target vectors are in world frame.
-            basis = _IDENTITY_BASIS if self.basis is None else self.basis
-            p_conv = np.array(basis_transform_position(p, basis), dtype=float)
+            if self._position_transform is not None:
+                p_conv = np.array(self._position_transform(p[0], p[1], p[2]), dtype=float)
+            else:
+                p_conv = np.array(p, dtype=float)
             w = frame.wrist
-            wrist_rot = np.array(
-                basis_transform_rotation_matrix(w.qx, w.qy, w.qz, w.qw, basis),
-                dtype=float,
-            )
+            if self._rotation_matrix_transform is not None:
+                wrist_rot = np.array(
+                    self._rotation_matrix_transform(w.qx, w.qy, w.qz, w.qw),
+                    dtype=float,
+                )
+            else:
+                wrist_rot = np.array(
+                    basis_transform_rotation_matrix(w.qx, w.qy, w.qz, w.qw, _IDENTITY_BASIS),
+                    dtype=float,
+                )
             return wrist_rot @ p_conv
 
-        if self.basis is not None:
-            p = basis_transform_position(p, self.basis)
+        if self._position_transform is not None:
+            return np.array(self._position_transform(p[0], p[1], p[2]), dtype=float)
         return np.array(p, dtype=float)
 
     def _estimate_scale(
