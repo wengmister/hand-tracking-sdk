@@ -12,6 +12,25 @@ Matrix3x3 = tuple[
     tuple[float, float, float],
 ]
 
+# Canonical basis transforms from Unity left-handed coordinates.
+# Unity left-handed uses x=right, y=up, z=forward.
+#
+# RFU target basis uses x=right, y=forward, z=up.
+# Mapping: (x, y, z) -> (x, z, y)
+BASIS_UNITY_LEFT_TO_RFU: Matrix3x3 = (
+    (1.0, 0.0, 0.0),
+    (0.0, 0.0, 1.0),
+    (0.0, 1.0, 0.0),
+)
+#
+# FLU target basis uses x=forward, y=left, z=up.
+# Mapping: (x, y, z) -> (z, -x, y)
+BASIS_UNITY_LEFT_TO_FLU: Matrix3x3 = (
+    (0.0, 0.0, 1.0),
+    (-1.0, 0.0, 0.0),
+    (0.0, 1.0, 0.0),
+)
+
 
 def unity_left_to_right_position(x: float, y: float, z: float) -> tuple[float, float, float]:
     """Convert a Unity left-handed position into a right-handed position.
@@ -396,3 +415,48 @@ def basis_transform_rotation_matrix(
     """
     rot = _quaternion_to_matrix(qx=qx, qy=qy, qz=qz, qw=qw)
     return _matmul(_matmul(basis, rot), _transpose(basis))
+
+
+def unity_left_to_rfu_position(x: float, y: float, z: float) -> tuple[float, float, float]:
+    """Convert Unity left-handed coordinates into RFU basis."""
+    return basis_transform_position((x, y, z), BASIS_UNITY_LEFT_TO_RFU)
+
+
+def unity_left_to_rfu_rotation(
+    qx: float,
+    qy: float,
+    qz: float,
+    qw: float,
+) -> tuple[float, float, float, float]:
+    """Convert Unity left-handed quaternion into RFU basis."""
+    return basis_transform_rotation(qx, qy, qz, qw, BASIS_UNITY_LEFT_TO_RFU)
+
+
+def unity_left_to_rfu_rotation_matrix(
+    qx: float,
+    qy: float,
+    qz: float,
+    qw: float,
+) -> Matrix3x3:
+    """Convert Unity left-handed quaternion into RFU rotation matrix."""
+    return basis_transform_rotation_matrix(qx, qy, qz, qw, BASIS_UNITY_LEFT_TO_RFU)
+
+
+def unity_left_to_flu_rotation(
+    qx: float,
+    qy: float,
+    qz: float,
+    qw: float,
+) -> tuple[float, float, float, float]:
+    """Convert Unity left-handed quaternion into FLU basis."""
+    return basis_transform_rotation(qx, qy, qz, qw, BASIS_UNITY_LEFT_TO_FLU)
+
+
+def unity_left_to_flu_rotation_matrix(
+    qx: float,
+    qy: float,
+    qz: float,
+    qw: float,
+) -> Matrix3x3:
+    """Convert Unity left-handed quaternion into FLU rotation matrix."""
+    return basis_transform_rotation_matrix(qx, qy, qz, qw, BASIS_UNITY_LEFT_TO_FLU)

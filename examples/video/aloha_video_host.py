@@ -15,6 +15,7 @@ from typing import Any
 from _common import build_base_parser, compensate_gravity, run_mujoco_host
 from _tracking import RelativeHeadCamera, RelativeWristTracker
 
+from hand_tracking_sdk.convert import BASIS_UNITY_LEFT_TO_RFU
 from hand_tracking_sdk.frame import HandFrame, HeadFrame
 from hand_tracking_sdk.teleop import GripConfig, grip_value
 
@@ -24,11 +25,7 @@ _DEFAULT_MODEL = os.path.join(os.path.dirname(__file__), "assets", "aloha", "sce
 # Unity left-handed: x=right, y=up, z=forward.
 # ALOHA sim world:   x=right, y=forward (into screen), z=up.
 # Mapping: (x,y,z) → (x, z, y).
-_ALOHA_BASIS = (
-    (1.0, 0.0, 0.0),
-    (0.0, 0.0, 1.0),
-    (0.0, 1.0, 0.0),
-)
+_ALOHA_BASIS = BASIS_UNITY_LEFT_TO_RFU
 
 # ALOHA joint names per arm (6-DOF, no gripper).
 _ARM_JOINT_NAMES = [

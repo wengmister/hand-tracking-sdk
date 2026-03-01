@@ -18,6 +18,7 @@ from _common import build_perf_hook, run_video_service, start_mocap_pump
 from _retarget import MujocoVectorRetargeter, default_tasks
 from _tracking import RelativeHeadCamera, RelativeWristTracker
 
+from hand_tracking_sdk.convert import BASIS_UNITY_LEFT_TO_RFU
 from hand_tracking_sdk.frame import HandFrame, HeadFrame
 from hand_tracking_sdk.models import JointName
 from hand_tracking_sdk.video.service import VideoServiceConfig
@@ -25,11 +26,7 @@ from hand_tracking_sdk.video.service import VideoServiceConfig
 _DEFAULT_MODEL = os.path.join(os.path.dirname(__file__), "assets", "inspire", "scene_bimanual.xml")
 
 # Unity left-handed (x right, y up, z forward) -> MuJoCo (x right, y forward, z up).
-_INSPIRE_BASIS = (
-    (1.0, 0.0, 0.0),
-    (0.0, 0.0, 1.0),
-    (0.0, 1.0, 0.0),
-)
+_INSPIRE_BASIS = BASIS_UNITY_LEFT_TO_RFU
 
 _SIDE_CONFIG: dict[str, dict[str, Any]] = {
     "left": {

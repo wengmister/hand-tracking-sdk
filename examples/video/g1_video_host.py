@@ -19,6 +19,7 @@ from typing import Any
 from _common import compensate_gravity, run_video_service, start_mocap_pump
 
 from hand_tracking_sdk.convert import (
+    BASIS_UNITY_LEFT_TO_FLU,
     basis_transform_position,
     basis_transform_rotation_matrix,
 )
@@ -33,11 +34,7 @@ _DEFAULT_MODEL = os.path.join(
 # Unity left-handed: x=right, y=up, z=forward.
 # G1 sim world (FLU): x=forward, y=left, z=up.
 # Mapping: Unity_z → G1_x, -Unity_x → G1_y, Unity_y → G1_z.
-_G1_BASIS = (
-    (0.0, 0.0, 1.0),
-    (-1.0, 0.0, 0.0),
-    (0.0, 1.0, 0.0),
-)
+_G1_BASIS = BASIS_UNITY_LEFT_TO_FLU
 
 # G1 arm joint names per side (7-DOF).
 _ARM_JOINT_NAMES = [
