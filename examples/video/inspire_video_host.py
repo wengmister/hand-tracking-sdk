@@ -15,13 +15,13 @@ import math
 import os
 from typing import Any
 
-from _common import build_perf_hook, run_video_service, start_mocap_pump
+from _common import build_base_parser, run_mujoco_host
+from _tracking import RelativeHeadCamera
 
 from hand_tracking_sdk.convert import basis_transform_position, basis_transform_rotation_matrix
 from hand_tracking_sdk.frame import HandFrame, HeadFrame
 from hand_tracking_sdk.models import JointName
 from hand_tracking_sdk.teleop import finger_curl_angles
-from hand_tracking_sdk.video.service import VideoServiceConfig
 
 _DEFAULT_MODEL = os.path.join(os.path.dirname(__file__), "assets", "inspire", "scene_bimanual.xml")
 
@@ -56,44 +56,14 @@ _FINGER_JOINTS: dict[str, list[str]] = {
 
 
 def _parse_args() -> argparse.Namespace:
-    parser = argparse.ArgumentParser(description="Host video service (Inspire hands).")
-    parser.add_argument(
-        "--mj-model",
-        default=_DEFAULT_MODEL,
-        help="Path to MuJoCo XML model (default: bundled Inspire bimanual).",
-    )
-    parser.add_argument(
-        "--mj-camera", default="overview", help="MuJoCo camera name or id string."
-    )
-    parser.add_argument("--tcp-host", default="0.0.0.0", help="WebSocket signaling bind host.")
-    parser.add_argument(
-        "--tcp-port", type=int, default=8765, help="WebSocket signaling bind port."
-    )
-    parser.add_argument(
-        "--mocap-tcp-host",
-        default="0.0.0.0",
-        help="Telemetry TCP host for Quest mocap stream.",
-    )
-    parser.add_argument(
-        "--mocap-tcp-port",
-        type=int,
-        default=5555,
-        help="Telemetry TCP port for Quest mocap stream.",
-    )
-    parser.add_argument(
-        "--disable-mocap-tcp",
-        action="store_true",
-        help="Disable telemetry TCP listener (sim runs without mocap input).",
-    )
-    parser.add_argument(
-        "--preset",
-        default="480p",
-        choices=("480p", "720p", "1080p"),
-        help="Video resolution preset (default 480p).",
-    )
-    parser.add_argument("--verbose", action="store_true", help="Enable verbose logs.")
-    parser.add_argument("--perf", action="store_true", help="Log per-frame timing breakdown.")
-    return parser.parse_args()
+    return build_base_parser(
+        "Host video service (Inspire hands).",
+        mujoco=True,
+        default_mj_model=_DEFAULT_MODEL,
+        default_mj_camera="overview",
+        default_preset="480p",
+        default_mocap_port=5555,
+    ).parse_args()
 
 
 # ---------------------------------------------------------------------------
@@ -219,13 +189,15 @@ def _build_pre_step(
                         info.append((aid, float(lo), float(hi)))
                 finger_info[side] = info
 
-            cam_id = model.camera(camera_name).id
-
-            # Save XML camera defaults for relative head tracking.
-            cam_default_pos = model.cam_pos[cam_id].copy()
-            cam_default_mat = np.zeros(9)
-            mujoco.mju_quat2Mat(cam_default_mat, model.cam_quat[cam_id])
-            cam_default_rot = cam_default_mat.reshape(3, 3).copy()
+            # Head camera with position tracking + orientation correction.
+            flip_y_180 = np.array([[-1, 0, 0], [0, 1, 0], [0, 0, -1]], dtype=float)
+            head_cam = RelativeHeadCamera(
+                model,
+                model.camera(camera_name).id,
+                _INSPIRE_BASIS,
+                track_position=True,
+                head_rot_correction=flip_y_180,
+            )
 
             state.update(
                 pos_ids=pos_ids,
@@ -233,9 +205,7 @@ def _build_pre_step(
                 ball_dof_addr=ball_dof_addr,
                 finger_info=finger_info,
                 initial_pos=initial_pos,
-                cam_id=cam_id,
-                cam_default_pos=cam_default_pos,
-                cam_default_rot=cam_default_rot,
+                head_cam=head_cam,
             )
 
         pos_ids = state["pos_ids"]
@@ -317,66 +287,17 @@ def _build_pre_step(
         # --- 6DOF head-tracked camera (relative to initial head pose) ---
         head = latest.get("Head")
         if isinstance(head, HeadFrame):
-            h = head.head
-            cam_id = state["cam_id"]
-
-            head_pos = np.array(
-                basis_transform_position((h.x, h.y, h.z), _INSPIRE_BASIS)
-            )
-            head_rot = np.array(
-                basis_transform_rotation_matrix(h.qx, h.qy, h.qz, h.qw, _INSPIRE_BASIS)
-            )
-            # MuJoCo camera looks along -Z; Quest head looks along +Z.
-            flip_y_180 = np.array([[-1, 0, 0], [0, 1, 0], [0, 0, -1]], dtype=float)
-            head_rot = head_rot @ flip_y_180
-
-            if "head_ref_pos" not in state:
-                state["head_ref_pos"] = head_pos.copy()
-                state["head_ref_rot"] = head_rot.copy()
-            else:
-                ref_pos = state["head_ref_pos"]
-                ref_rot = state["head_ref_rot"]
-                default_pos = state["cam_default_pos"]
-                default_rot = state["cam_default_rot"]
-
-                model.cam_pos[cam_id] = default_pos + (head_pos - ref_pos)
-
-                delta_rot = head_rot @ ref_rot.T
-                cam_rot = delta_rot @ default_rot
-
-                cam_quat = np.empty(4)
-                mujoco.mju_mat2Quat(cam_quat, cam_rot.flatten())
-                model.cam_quat[cam_id] = cam_quat
+            state["head_cam"].update(head, model)
 
     return pre_step
 
 
-async def _run() -> int:
-    args = _parse_args()
-
-    pre_step = None
-    if not args.disable_mocap_tcp:
-        latest = start_mocap_pump(args.mocap_tcp_host, args.mocap_tcp_port)
-        pre_step = _build_pre_step(
-            latest,
-            camera_name=args.mj_camera,
-        )
-
-    perf_hook = build_perf_hook() if args.perf else None
-
-    config = VideoServiceConfig(
-        signaling_host=args.tcp_host,
-        signaling_port=args.tcp_port,
-        source="mujoco",
-        preset=args.preset,
-        mj_model_path=args.mj_model,
-        mj_camera=args.mj_camera,
-        mj_pre_step=pre_step,
-        mj_perf_hook=perf_hook,
-        verbose=args.verbose,
-    )
-    return await run_video_service(config, enable_mocap_tcp=False)
+def _build_pre_step_from_args(
+    latest: dict[str, HandFrame | HeadFrame],
+    args: argparse.Namespace,
+) -> Any:
+    return _build_pre_step(latest, camera_name=args.mj_camera)
 
 
 if __name__ == "__main__":
-    raise SystemExit(asyncio.run(_run()))
+    raise SystemExit(asyncio.run(run_mujoco_host(_parse_args(), _build_pre_step_from_args)))

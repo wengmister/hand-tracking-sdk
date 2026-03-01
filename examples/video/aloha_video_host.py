@@ -12,12 +12,11 @@ import asyncio
 import os
 from typing import Any
 
-from _common import build_perf_hook, compensate_gravity, run_video_service, start_mocap_pump
+from _common import build_base_parser, compensate_gravity, run_mujoco_host
+from _tracking import RelativeHeadCamera, RelativeWristTracker
 
-from hand_tracking_sdk.convert import basis_transform_position, basis_transform_rotation_matrix
 from hand_tracking_sdk.frame import HandFrame, HeadFrame
 from hand_tracking_sdk.teleop import GripConfig, grip_value
-from hand_tracking_sdk.video.service import VideoServiceConfig
 
 _DEFAULT_MODEL = os.path.join(os.path.dirname(__file__), "assets", "aloha", "scene.xml")
 
@@ -43,40 +42,13 @@ _ARM_JOINT_NAMES = [
 
 
 def _parse_args() -> argparse.Namespace:
-    parser = argparse.ArgumentParser(description="Host video service (MuJoCo source).")
-    parser.add_argument(
-        "--mj-model",
-        default=_DEFAULT_MODEL,
-        help="Path to MuJoCo XML model (default: bundled ALOHA).",
-    )
-    parser.add_argument(
-        "--mj-camera", default="teleop_overview", help="MuJoCo camera name or id string."
-    )
-    parser.add_argument("--tcp-host", default="0.0.0.0", help="WebSocket signaling bind host.")
-    parser.add_argument(
-        "--tcp-port", type=int, default=8765, help="WebSocket signaling bind port."
-    )
-    parser.add_argument(
-        "--mocap-tcp-host",
-        default="0.0.0.0",
-        help="Telemetry TCP host for Quest mocap stream.",
-    )
-    parser.add_argument(
-        "--mocap-tcp-port",
-        type=int,
-        default=5555,
-        help="Telemetry TCP port for Quest mocap stream.",
-    )
-    parser.add_argument(
-        "--disable-mocap-tcp",
-        action="store_true",
-        help="Disable telemetry TCP listener (sim runs without mocap input).",
-    )
-    parser.add_argument(
-        "--preset",
-        default="480p",
-        choices=("480p", "720p", "1080p"),
-        help="Video resolution preset (default 480p).",
+    parser = build_base_parser(
+        "Host video service (MuJoCo source).",
+        mujoco=True,
+        default_mj_model=_DEFAULT_MODEL,
+        default_mj_camera="teleop_overview",
+        default_preset="480p",
+        default_mocap_port=5555,
     )
     parser.add_argument(
         "--left-gripper-actuator",
@@ -88,8 +60,6 @@ def _parse_args() -> argparse.Namespace:
         default="right/gripper",
         help="MuJoCo actuator name for right gripper.",
     )
-    parser.add_argument("--verbose", action="store_true", help="Enable verbose logs.")
-    parser.add_argument("--perf", action="store_true", help="Log per-frame timing breakdown.")
     return parser.parse_args()
 
 
@@ -185,13 +155,7 @@ def _build_pre_step(
             l_site_id = model.site("left/gripper").id
             r_site_id = model.site("right/gripper").id
 
-            # Camera rotation from head tracking.
-            cam_id = model.camera(camera_name).id
-            # model.cam_quat is (w,x,y,z); convert to 3x3 for delta math.
-            cam_q = model.cam_quat[cam_id].copy()
-            initial_cam_rot = np.empty(9)
-            mujoco.mju_quat2Mat(initial_cam_rot, cam_q)
-            initial_cam_rot = initial_cam_rot.reshape(3, 3)
+            head_cam = RelativeHeadCamera(model, model.camera(camera_name).id, _ALOHA_BASIS)
 
             state.update(
                 mink=mink,
@@ -205,17 +169,17 @@ def _build_pre_step(
                 left_grip_id=left_grip_id,
                 right_grip_id=right_grip_id,
                 subtree_ids=[left_subtree, right_subtree],
-                initial_l_pos=data.site_xpos[l_site_id].copy(),
-                initial_l_rot=data.site_xmat[l_site_id].reshape(3, 3).copy(),
-                initial_r_pos=data.site_xpos[r_site_id].copy(),
-                initial_r_rot=data.site_xmat[r_site_id].reshape(3, 3).copy(),
-                ref_left_pos=None,
-                ref_left_rot=None,
-                ref_right_pos=None,
-                ref_right_rot=None,
-                cam_id=cam_id,
-                initial_cam_rot=initial_cam_rot,
-                ref_head_rot=None,
+                head_cam=head_cam,
+                left_tracker=RelativeWristTracker(
+                    _ALOHA_BASIS,
+                    data.site_xpos[l_site_id].copy(),
+                    data.site_xmat[l_site_id].reshape(3, 3).copy(),
+                ),
+                right_tracker=RelativeWristTracker(
+                    _ALOHA_BASIS,
+                    data.site_xpos[r_site_id].copy(),
+                    data.site_xmat[r_site_id].reshape(3, 3).copy(),
+                ),
             )
 
         # ---- per-frame IK solve ----
@@ -236,40 +200,15 @@ def _build_pre_step(
         # === Head tracking → camera rotation ===
         head = latest.get("Head")
         if isinstance(head, HeadFrame):
-            h = head.head
-            cur_rot = np.array(
-                basis_transform_rotation_matrix(
-                    h.qx, h.qy, h.qz, h.qw, _ALOHA_BASIS
-                )
-            )
-            if state["ref_head_rot"] is None:
-                state["ref_head_rot"] = cur_rot.copy()
-            delta_rot = cur_rot @ state["ref_head_rot"].T
-            new_cam_rot = delta_rot @ state["initial_cam_rot"]
-            cam_quat = np.empty(4)
-            mujoco.mju_mat2Quat(cam_quat, new_cam_rot.flatten())
-            model.cam_quat[state["cam_id"]] = cam_quat
+            state["head_cam"].update(head, model)
 
         left = latest.get("Left")
         right = latest.get("Right")
 
         # Differential teleop: compute hand delta from reference pose,
-        # apply to initial EE pose.  Positions and rotations are converted
-        # from Unity left-handed to FLU before computing deltas so they
-        # align with the MuJoCo world frame.
+        # apply to initial EE pose, then solve IK.
         if isinstance(left, HandFrame):
-            w = left.wrist
-            cur_pos = np.array(basis_transform_position((w.x, w.y, w.z), _ALOHA_BASIS))
-            cur_rot = np.array(
-                basis_transform_rotation_matrix(w.qx, w.qy, w.qz, w.qw, _ALOHA_BASIS)
-            )
-            if state["ref_left_pos"] is None:
-                state["ref_left_pos"] = cur_pos.copy()
-                state["ref_left_rot"] = cur_rot.copy()
-            delta_pos = cur_pos - state["ref_left_pos"]
-            delta_rot = cur_rot @ state["ref_left_rot"].T
-            target_pos = state["initial_l_pos"] + delta_pos
-            target_rot = delta_rot @ state["initial_l_rot"]
+            target_pos, target_rot = state["left_tracker"].update(left.wrist)
             quat = np.empty(4)
             mujoco.mju_mat2Quat(quat, target_rot.flatten())
             l_ee_task.set_target(
@@ -281,18 +220,7 @@ def _build_pre_step(
             data.ctrl[state["left_grip_id"]] = grip_value(left, grip_config)
 
         if isinstance(right, HandFrame):
-            w = right.wrist
-            cur_pos = np.array(basis_transform_position((w.x, w.y, w.z), _ALOHA_BASIS))
-            cur_rot = np.array(
-                basis_transform_rotation_matrix(w.qx, w.qy, w.qz, w.qw, _ALOHA_BASIS)
-            )
-            if state["ref_right_pos"] is None:
-                state["ref_right_pos"] = cur_pos.copy()
-                state["ref_right_rot"] = cur_rot.copy()
-            delta_pos = cur_pos - state["ref_right_pos"]
-            delta_rot = cur_rot @ state["ref_right_rot"].T
-            target_pos = state["initial_r_pos"] + delta_pos
-            target_rot = delta_rot @ state["initial_r_rot"]
+            target_pos, target_rot = state["right_tracker"].update(right.wrist)
             quat = np.empty(4)
             mujoco.mju_mat2Quat(quat, target_rot.flatten())
             r_ee_task.set_target(
@@ -332,35 +260,17 @@ def _build_pre_step(
     return pre_step
 
 
-async def _run() -> int:
-    args = _parse_args()
-
-    # Set up mocap ingestion and pre_step hook when mocap is enabled.
-    pre_step = None
-    if not args.disable_mocap_tcp:
-        latest = start_mocap_pump(args.mocap_tcp_host, args.mocap_tcp_port)
-        pre_step = _build_pre_step(
-            latest,
-            left_gripper_actuator=args.left_gripper_actuator,
-            right_gripper_actuator=args.right_gripper_actuator,
-            camera_name=args.mj_camera,
-        )
-
-    perf_hook = build_perf_hook() if args.perf else None
-
-    config = VideoServiceConfig(
-        signaling_host=args.tcp_host,
-        signaling_port=args.tcp_port,
-        source="mujoco",
-        preset=args.preset,
-        mj_model_path=args.mj_model,
-        mj_camera=args.mj_camera,
-        mj_pre_step=pre_step,
-        mj_perf_hook=perf_hook,
-        verbose=args.verbose,
+def _build_pre_step_from_args(
+    latest: dict[str, HandFrame | HeadFrame],
+    args: argparse.Namespace,
+) -> Any:
+    return _build_pre_step(
+        latest,
+        left_gripper_actuator=args.left_gripper_actuator,
+        right_gripper_actuator=args.right_gripper_actuator,
+        camera_name=args.mj_camera,
     )
-    return await run_video_service(config, enable_mocap_tcp=False)
 
 
 if __name__ == "__main__":
-    raise SystemExit(asyncio.run(_run()))
+    raise SystemExit(asyncio.run(run_mujoco_host(_parse_args(), _build_pre_step_from_args)))

@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+import argparse
 import asyncio
+from collections.abc import Callable
 from threading import Thread
 from typing import Any
 
@@ -167,3 +169,102 @@ def build_perf_hook(interval: int = 60) -> Any:
             count = 0
 
     return hook
+
+
+# ---------------------------------------------------------------------------
+# Shared argument parsing
+# ---------------------------------------------------------------------------
+
+
+def build_base_parser(
+    description: str,
+    *,
+    mujoco: bool = False,
+    default_mj_model: str | None = None,
+    default_mj_camera: str | None = None,
+    default_preset: str = "720p",
+    default_mocap_port: int = 8000,
+) -> argparse.ArgumentParser:
+    """Create an argument parser with standard video host arguments.
+
+    When *mujoco* is ``True``, adds ``--mj-model``, ``--mj-camera``, and
+    ``--perf`` arguments.
+    """
+    parser = argparse.ArgumentParser(description=description)
+    parser.add_argument("--tcp-host", default="0.0.0.0", help="WebSocket signaling bind host.")
+    parser.add_argument(
+        "--tcp-port", type=int, default=8765, help="WebSocket signaling bind port."
+    )
+    parser.add_argument(
+        "--mocap-tcp-host",
+        default="0.0.0.0",
+        help="Telemetry TCP host for Quest mocap stream.",
+    )
+    parser.add_argument(
+        "--mocap-tcp-port",
+        type=int,
+        default=default_mocap_port,
+        help="Telemetry TCP port for Quest mocap stream.",
+    )
+    parser.add_argument(
+        "--disable-mocap-tcp",
+        action="store_true",
+        help="Disable telemetry TCP listener.",
+    )
+    parser.add_argument(
+        "--preset",
+        default=default_preset,
+        choices=("480p", "720p", "1080p"),
+        help="Video resolution preset.",
+    )
+    parser.add_argument("--verbose", action="store_true", help="Enable verbose logs.")
+    if mujoco:
+        parser.add_argument(
+            "--mj-model", default=default_mj_model, help="Path to MuJoCo XML model."
+        )
+        parser.add_argument(
+            "--mj-camera", default=default_mj_camera, help="MuJoCo camera name or id string."
+        )
+        parser.add_argument(
+            "--perf", action="store_true", help="Log per-frame timing breakdown."
+        )
+    return parser
+
+
+# ---------------------------------------------------------------------------
+# MuJoCo host runner
+# ---------------------------------------------------------------------------
+
+PreStepBuilder = Callable[
+    [dict[str, HandFrame | HeadFrame], argparse.Namespace], Any
+]
+
+
+async def run_mujoco_host(
+    args: argparse.Namespace,
+    pre_step_builder: PreStepBuilder | None = None,
+) -> int:
+    """Run a MuJoCo-based video host with standard mocap and perf wiring.
+
+    *pre_step_builder* receives the mocap ``latest`` dict and parsed
+    *args*, and returns a ``pre_step(model, data)`` callback.
+    """
+    pre_step = None
+    if not args.disable_mocap_tcp and pre_step_builder is not None:
+        latest = start_mocap_pump(args.mocap_tcp_host, args.mocap_tcp_port)
+        pre_step = pre_step_builder(latest, args)
+
+    perf_hook = build_perf_hook() if args.perf else None
+
+    config = VideoServiceConfig(
+        signaling_host=args.tcp_host,
+        signaling_port=args.tcp_port,
+        source="mujoco",
+        preset=args.preset,
+        mj_model_path=args.mj_model,
+        mj_camera=args.mj_camera,
+        mj_pre_step=pre_step,
+        mj_perf_hook=perf_hook,
+        verbose=args.verbose,
+    )
+    return await run_video_service(config, enable_mocap_tcp=False)

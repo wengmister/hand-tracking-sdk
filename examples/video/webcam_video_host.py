@@ -2,42 +2,16 @@
 
 from __future__ import annotations
 
-import argparse
 import asyncio
 
-from _common import run_video_service
+from _common import build_base_parser, run_video_service
 
 from hand_tracking_sdk.video.service import VideoServiceConfig
 
 
-def _parse_args() -> argparse.Namespace:
-    parser = argparse.ArgumentParser(description="Host video service (webcam source).")
-    parser.add_argument("--tcp-host", default="0.0.0.0", help="WebSocket signaling bind host.")
-    parser.add_argument("--tcp-port", type=int, default=8765, help="WebSocket signaling bind port.")
-    parser.add_argument(
-        "--mocap-tcp-host",
-        default="0.0.0.0",
-        help="Telemetry TCP host for Quest mocap stream.",
-    )
-    parser.add_argument(
-        "--mocap-tcp-port",
-        type=int,
-        default=8000,
-        help="Telemetry TCP port for Quest mocap stream.",
-    )
-    parser.add_argument(
-        "--disable-mocap-tcp",
-        action="store_true",
-        help="Disable telemetry TCP sink listener.",
-    )
-    parser.add_argument(
-        "--preset",
-        default="720p",
-        choices=("480p", "720p", "1080p"),
-        help="Video resolution preset.",
-    )
+def _parse_args():
+    parser = build_base_parser("Host video service (webcam source).")
     parser.add_argument("--webcam-index", type=int, default=0, help="Webcam device index.")
-    parser.add_argument("--verbose", action="store_true", help="Enable verbose logs.")
     return parser.parse_args()
 
 
