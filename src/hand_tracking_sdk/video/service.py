@@ -336,9 +336,17 @@ class VideoService:
             self._sender = None
             self._log("sender stopped")
 
+    _VALID_SOURCES = ("test", "webcam", "mujoco")
+
     def _build_source(self) -> VideoSourceAdapter:
         width, height, fps = self._parse_preset(self._config.preset)
-        if self._config.source == "mujoco":
+        source = self._config.source
+        if source not in self._VALID_SOURCES:
+            raise ValueError(
+                f"Unknown source {source!r}; "
+                f"expected one of {self._VALID_SOURCES}"
+            )
+        if source == "mujoco":
             if not self._config.mj_model_path:
                 raise ValueError("mujoco source requires mj_model_path (--mj-model).")
             return MujocoSourceAdapter(
@@ -349,7 +357,7 @@ class VideoService:
                 fps=fps,
                 pre_step=self._config.mj_pre_step,
             )
-        if self._config.source == "webcam":
+        if source == "webcam":
             return WebcamSourceAdapter(
                 device_index=self._config.webcam_index,
                 width=width,
@@ -382,6 +390,8 @@ class VideoService:
             log_hook=lambda msg: self._log(f"[sender] {msg}"),
         )
 
+    _VALID_PRESETS = ("480p30", "480p60", "720p30", "720p60", "1080p30")
+
     def _parse_preset(self, preset: str) -> tuple[int, int, int]:
         normalized = preset.lower()
         if normalized == "480p30":
@@ -394,7 +404,10 @@ class VideoService:
             return (1280, 720, 60)
         if normalized == "1080p30":
             return (1920, 1080, 30)
-        return (1280, 720, 30)
+        raise ValueError(
+            f"Unknown preset {preset!r}; "
+            f"expected one of {self._VALID_PRESETS}"
+        )
 
     def _parse_fps(self, preset: str) -> int:
         return self._parse_preset(preset)[2]
