@@ -14,6 +14,9 @@ from hand_tracking_sdk.client import (
     TransportMode,
 )
 from hand_tracking_sdk.convert import (
+    basis_transform_position,
+    basis_transform_rotation,
+    basis_transform_rotation_matrix,
     convert_hand_frame_unity_left_to_right,
     convert_landmarks_unity_left_to_right,
     convert_wrist_pose_unity_left_to_right,
@@ -55,6 +58,7 @@ from hand_tracking_sdk.teleop import (
     ArmTarget,
     GripConfig,
     extract_arm_target,
+    finger_curl_angles,
     grip_value,
     pinch_distance,
 )
@@ -141,7 +145,11 @@ __all__ = [
     "unity_right_to_flu_position",
     "ArmTarget",
     "GripConfig",
+    "basis_transform_position",
+    "basis_transform_rotation",
+    "basis_transform_rotation_matrix",
     "extract_arm_target",
+    "finger_curl_angles",
     "grip_value",
     "pinch_distance",
 ]
