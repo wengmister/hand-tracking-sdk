@@ -3,7 +3,17 @@
 from __future__ import annotations
 
 import asyncio
+from threading import Thread
+from typing import Any
 
+from hand_tracking_sdk.client import (
+    ErrorPolicy,
+    HTSClient,
+    HTSClientConfig,
+    StreamOutput,
+    TransportMode,
+)
+from hand_tracking_sdk.frame import HandFrame, HeadFrame
 from hand_tracking_sdk.video.service import VideoService, VideoServiceConfig
 
 
@@ -32,6 +42,60 @@ async def _run_telemetry_sink(
     if verbose:
         print(f"[telemetry-sink] listening on {host}:{port}")
     return server
+
+
+def start_mocap_pump(
+    host: str,
+    port: int,
+) -> dict[str, HandFrame | HeadFrame]:
+    """Start a background thread that ingests mocap telemetry via HTSClient.
+
+    Returns a shared dict keyed by ``"Left"`` / ``"Right"`` / ``"Head"``
+    whose values are the latest frames.  The dict is updated from a daemon
+    thread so reads from the MuJoCo render thread are lock-free (dict
+    value assignment is atomic in CPython).
+    """
+    latest: dict[str, HandFrame | HeadFrame] = {}
+
+    client = HTSClient(
+        HTSClientConfig(
+            transport_mode=TransportMode.TCP_SERVER,
+            host=host,
+            port=port,
+            output=StreamOutput.FRAMES,
+            error_policy=ErrorPolicy.TOLERANT,
+        )
+    )
+
+    def _pump() -> None:
+        for event in client.iter_events():
+            latest[event.side.value] = event
+
+    thread = Thread(target=_pump, daemon=True)
+    thread.start()
+    return latest
+
+
+def compensate_gravity(
+    model: Any,
+    data: Any,
+    subtree_ids: list[int],
+) -> None:
+    """Apply gravity compensation forces to the given subtrees.
+
+    Works for any MuJoCo model with position-actuated arms.  Imports
+    ``mujoco`` and ``numpy`` lazily so the module stays importable without
+    sim dependencies.
+    """
+    import mujoco
+    import numpy as np
+
+    data.qfrc_applied[:] = 0.0
+    jac = np.empty((3, model.nv))
+    for sid in subtree_ids:
+        total_mass = model.body_subtreemass[sid]
+        mujoco.mj_jacSubtreeCom(model, data, jac, sid)
+        data.qfrc_applied[:] -= model.opt.gravity * total_mass @ jac
 
 
 async def run_video_service(
