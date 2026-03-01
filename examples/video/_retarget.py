@@ -10,13 +10,14 @@ from __future__ import annotations
 
 import argparse
 import os
+from collections.abc import Callable, Mapping
 from dataclasses import dataclass
-from typing import Any, Callable, Mapping
+from typing import Any
 
 import numpy as np
 
-from hand_tracking_sdk.convert import basis_transform_rotation_matrix
 from hand_tracking_sdk.constants import STREAMED_JOINT_NAMES
+from hand_tracking_sdk.convert import basis_transform_rotation_matrix
 from hand_tracking_sdk.frame import HandFrame
 from hand_tracking_sdk.models import HandLandmarks, HandSide, JointName, WristPose
 
@@ -92,11 +93,16 @@ class MujocoVectorRetargeter:
         site_by_joint: Mapping[PointKey, str] | None = None,
         hand_spec: RobotHandSpec | None = None,
         tasks: list[VectorTask] | None = None,
-        position_transform: Callable[[float, float, float], tuple[float, float, float]] | None = None,
-        rotation_matrix_transform: Callable[
-            [float, float, float, float], tuple[tuple[float, float, float], ...]
-        ]
-        | None = None,
+        position_transform: (
+            Callable[[float, float, float], tuple[float, float, float]] | None
+        ) = None,
+        rotation_matrix_transform: (
+            Callable[
+                [float, float, float, float],
+                tuple[tuple[float, float, float], ...],
+            ]
+            | None
+        ) = None,
         damping: float = 1e-4,
         step_size: float = 1.0,
         max_iters: int = 8,
@@ -179,9 +185,7 @@ class MujocoVectorRetargeter:
             jid = model.joint(name).id
             jtype = int(model.jnt_type[jid])
             if jtype not in (mujoco.mjtJoint.mjJNT_HINGE, mujoco.mjtJoint.mjJNT_SLIDE):
-                raise ValueError(
-                    f"Joint {name!r} is not hinge/slide; got joint type {jtype}"
-                )
+                raise ValueError(f"Joint {name!r} is not hinge/slide; got joint type {jtype}")
             qid = int(model.jnt_qposadr[jid])
             did = int(model.jnt_dofadr[jid])
             qpos_ids.append(qid)
@@ -294,7 +298,7 @@ class MujocoVectorRetargeter:
             scale = 1.0 if self._global_scale is None else self._global_scale
 
         residual_chunks: list[np.ndarray] = []
-        for task, target in zip(self.tasks, target_vectors):
+        for task, target in zip(self.tasks, target_vectors, strict=False):
             a_id = self._site_ids[_point_key_name(task.point_a)]
             b_id = self._site_ids[_point_key_name(task.point_b)]
             robot_vec = self.data.site_xpos[b_id] - self.data.site_xpos[a_id]
@@ -316,8 +320,6 @@ class MujocoVectorRetargeter:
     def _raw_frame_point(self, frame: HandFrame, key: PointKey) -> tuple[float, float, float]:
         if self._point_extractor is not None:
             return self._point_extractor(frame, key)
-        if isinstance(key, JointName):
-            return frame.get_joint(key)
         return frame.get_joint(key)
 
     def _frame_joint(self, frame: HandFrame, name: PointKey) -> np.ndarray:
@@ -362,7 +364,7 @@ class MujocoVectorRetargeter:
 
         robot_norms: list[float] = []
         human_norms: list[float] = []
-        for task, hvec in zip(self.tasks, target_vectors):
+        for task, hvec in zip(self.tasks, target_vectors, strict=False):
             a_id = self._site_ids[_point_key_name(task.point_a)]
             b_id = self._site_ids[_point_key_name(task.point_b)]
             rvec = self.data.site_xpos[b_id] - self.data.site_xpos[a_id]
@@ -389,7 +391,7 @@ class MujocoVectorRetargeter:
         jac_pos_a = np.zeros((3, self.model.nv), dtype=float)
         jac_pos_b = np.zeros((3, self.model.nv), dtype=float)
 
-        for task, target in zip(self.tasks, target_vectors):
+        for task, target in zip(self.tasks, target_vectors, strict=False):
             a_id = self._site_ids[_point_key_name(task.point_a)]
             b_id = self._site_ids[_point_key_name(task.point_b)]
 
@@ -403,7 +405,7 @@ class MujocoVectorRetargeter:
 
             mujoco.mj_jacSite(self.model, self.data, jac_pos_a, None, a_id)
             mujoco.mj_jacSite(self.model, self.data, jac_pos_b, None, b_id)
-            jv = (jac_pos_b[:, self._joint_dof] - jac_pos_a[:, self._joint_dof])
+            jv = jac_pos_b[:, self._joint_dof] - jac_pos_a[:, self._joint_dof]
             jac_rows.append(w * jv)
 
         return np.concatenate(residual_chunks), jac_rows
@@ -543,7 +545,7 @@ def _run_smoke_test(
         key_id = model.key("home").id
         mujoco.mj_resetDataKeyframe(model, data, key_id)
         home_qpos[:] = data.qpos
-    except Exception:
+    except (KeyError, ValueError):
         home_qpos[:] = data.qpos
 
     spec = inspire_hand_spec(side)
@@ -592,10 +594,7 @@ def _run_smoke_test(
 
     print(f"[retarget-smoke] model={model_path}")
     print(f"[retarget-smoke] side={side} joints={len(joint_names)} tasks={len(retargeter.tasks)}")
-    print(
-        "[retarget-smoke] residual norm "
-        f"before={before_res:.6f} after={after_res:.6f}"
-    )
+    print(f"[retarget-smoke] residual norm before={before_res:.6f} after={after_res:.6f}")
     print(
         "[retarget-smoke] q rmse to synthetic target "
         f"before={rmse_before:.6f} after={rmse_after:.6f}"

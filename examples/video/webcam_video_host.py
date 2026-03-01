@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import argparse
 import asyncio
 
 from _common import build_base_parser, run_video_service
@@ -9,7 +10,7 @@ from _common import build_base_parser, run_video_service
 from hand_tracking_sdk.video.service import VideoServiceConfig
 
 
-def _parse_args():
+def _parse_args() -> argparse.Namespace:
     parser = build_base_parser("Host video service (webcam source).")
     parser.add_argument("--webcam-index", type=int, default=0, help="Webcam device index.")
     return parser.parse_args()

@@ -192,9 +192,7 @@ def build_base_parser(
     """
     parser = argparse.ArgumentParser(description=description)
     parser.add_argument("--tcp-host", default="0.0.0.0", help="WebSocket signaling bind host.")
-    parser.add_argument(
-        "--tcp-port", type=int, default=8765, help="WebSocket signaling bind port."
-    )
+    parser.add_argument("--tcp-port", type=int, default=8765, help="WebSocket signaling bind port.")
     parser.add_argument(
         "--mocap-tcp-host",
         default="0.0.0.0",
@@ -225,9 +223,7 @@ def build_base_parser(
         parser.add_argument(
             "--mj-camera", default=default_mj_camera, help="MuJoCo camera name or id string."
         )
-        parser.add_argument(
-            "--perf", action="store_true", help="Log per-frame timing breakdown."
-        )
+        parser.add_argument("--perf", action="store_true", help="Log per-frame timing breakdown.")
     return parser
 
 
@@ -235,9 +231,7 @@ def build_base_parser(
 # MuJoCo host runner
 # ---------------------------------------------------------------------------
 
-PreStepBuilder = Callable[
-    [dict[str, HandFrame | HeadFrame], argparse.Namespace], Any
-]
+PreStepBuilder = Callable[[dict[str, HandFrame | HeadFrame], argparse.Namespace], Any]
 
 
 async def run_mujoco_host(

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import argparse
 import asyncio
 
 from _common import build_base_parser, run_video_service
@@ -9,7 +10,7 @@ from _common import build_base_parser, run_video_service
 from hand_tracking_sdk.video.service import VideoServiceConfig
 
 
-def _parse_args():
+def _parse_args() -> argparse.Namespace:
     return build_base_parser("Host video service (test pattern source).").parse_args()
 
 

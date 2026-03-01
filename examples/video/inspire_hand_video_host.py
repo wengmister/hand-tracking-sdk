@@ -14,7 +14,6 @@ import os
 from typing import Any
 
 import numpy as np
-
 from _common import build_base_parser, run_mujoco_host
 from _retarget import MujocoVectorRetargeter, default_tasks
 from _tracking import RelativeHeadCamera, RelativeWristTracker
@@ -149,6 +148,8 @@ def _build_pre_step(
 
             # Camera tracker: keep 6-DOF relative head motion behavior.
             cam_id = model.camera(camera_name).id
+            # 180° rotation about Y so the camera's forward axis aligns with the
+            # Inspire hand's forward direction after coordinate conversion.
             flip_y_180 = np.array([[-1.0, 0.0, 0.0], [0.0, 1.0, 0.0], [0.0, 0.0, -1.0]])
             state["head_tracker"] = RelativeHeadCamera(
                 model,
@@ -162,11 +163,13 @@ def _build_pre_step(
             side_state: dict[str, Any] = {}
             for side, cfg in _SIDE_CONFIG.items():
                 base_ids = [model.actuator(name).id for name in cfg["base_actuators"]]
-                home_pos = np.array([
-                    data.ctrl[base_ids[0]],
-                    data.ctrl[base_ids[1]],
-                    data.ctrl[base_ids[2]],
-                ])
+                home_pos = np.array(
+                    [
+                        data.ctrl[base_ids[0]],
+                        data.ctrl[base_ids[1]],
+                        data.ctrl[base_ids[2]],
+                    ]
+                )
                 wrist_tracker = RelativeWristTracker(
                     None,
                     home_pos,
@@ -216,7 +219,7 @@ def _build_pre_step(
             state["head_tracker"].update(head, model)
 
         # Hand tracking + vector retargeting.
-        for side, s in state["sides"].items():
+        for _side, s in state["sides"].items():
             frame = latest.get(s["frame_key"])
             if not isinstance(frame, HandFrame):
                 continue
@@ -242,10 +245,10 @@ def _build_pre_step(
             quat = np.empty(4)
             mujoco.mju_mat2Quat(quat, s["smoothed_rot"].flatten())
             qadr = s["ball_qpos_adr"]
-            data.qpos[qadr: qadr + 4] = quat
+            data.qpos[qadr : qadr + 4] = quat
             # Avoid physics-injected wrist jitter from direct qpos writes.
             dadr = s["ball_dof_adr"]
-            data.qvel[dadr: dadr + 3] = 0.0
+            data.qvel[dadr : dadr + 3] = 0.0
 
             q_finger = s["retargeter"].solve(frame, full_qpos=data.qpos)
             data.ctrl[s["finger_actuator_ids"]] = q_finger
