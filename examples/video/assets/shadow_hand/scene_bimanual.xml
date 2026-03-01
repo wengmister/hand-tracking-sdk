@@ -1,5 +1,6 @@
-<mujoco model="shadow_hand_retarget">
+<mujoco model="shadow_hand_bimanual">
   <include file="right_hand_teleop.xml"/>
+  <include file="left_hand_teleop.xml"/>
 
   <option gravity="0 0 0"/>
 
@@ -22,13 +23,18 @@
     <light pos="0 0 1"/>
     <light pos="0 0 1.5" dir="0 0 -1" directional="true"/>
     <geom name="floor" pos="0 0 -0.1" size="0 0 0.05" type="plane" material="groundplane"/>
-    <camera name="overview" pos="0.35 -0.35 0.45" xyaxes="0.707 0.707 0 -0.3 0.3 0.9" fovy="50"/>
+    <camera name="overview" pos="0 -0.5 0.5" xyaxes="1 0 0 0 0.574 0.819" fovy="60"/>
   </worldbody>
 
-  <!-- Palm-down, fingers forward. Ball joint quat 0 0.7071 0.7071 0 -->
+  <!-- Both hands palm-down, fingers forward. Ball joint quat 0 0.7071 0.7071 0 -->
+  <!-- Right hand: x=+0.15, Left hand: x=-0.15, both at z=0.15 -->
+  <!-- Each hand: 3 slide qpos + 4 ball qpos + 22 finger qpos = 29 -->
+  <!-- Each hand: 3 slide ctrl + 18 finger ctrl = 21 -->
   <keyframe>
     <key name="home"
-      qpos="0 0 0  0 0.7071 0.7071 0  0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0"
-      ctrl="0 0 0  0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0"/>
+      qpos="0.15 0 0.15  0 0.7071 0.7071 0  0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0
+            -0.15 0 0.15  0 0.7071 0.7071 0  0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0"
+      ctrl="0.15 0 0.15  0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0
+            -0.15 0 0.15  0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0"/>
   </keyframe>
 </mujoco>
