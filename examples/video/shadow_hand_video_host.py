@@ -1,10 +1,11 @@
 """Run Shadow Hand (right) host with vector retargeting.
 
 Maps Quest hand tracking data to the Shadow Hand E3M5 dexterous hand model
-using the MujocoVectorRetargeter.  The hand is fixed in space (no wrist
-translation); wrist flex/extend and abduction are driven via the model's
-own wrist hinge joints.  Four tendon-coupled actuators (FFJ0, MFJ0, RFJ0,
-LFJ0) are driven by summing the solved middle + distal joint positions.
+using the MujocoVectorRetargeter.  The hand floats in space via 3 slide
+joints + 1 ball joint (same pattern as Inspire), with wrist hinge joints
+frozen.  Finger retargeting uses vector-based optimization; four
+tendon-coupled actuators (FFJ0, MFJ0, RFJ0, LFJ0) are driven by summing
+the solved middle + distal joint positions.
 """
 
 from __future__ import annotations
@@ -17,9 +18,12 @@ from typing import Any
 import numpy as np
 from _common import build_perf_hook, run_video_service, start_mocap_pump
 from _retarget import MujocoVectorRetargeter, default_tasks
-from _tracking import RelativeHeadCamera
+from _tracking import RelativeHeadCamera, RelativeWristTracker
 
-from hand_tracking_sdk.convert import BASIS_UNITY_LEFT_TO_RFU
+from hand_tracking_sdk.convert import (
+    unity_left_to_rfu_position,
+    unity_left_to_rfu_rotation_matrix,
+)
 from hand_tracking_sdk.frame import HandFrame, HeadFrame
 from hand_tracking_sdk.models import JointName
 from hand_tracking_sdk.video.service import VideoServiceConfig
@@ -28,13 +32,14 @@ _DEFAULT_MODEL = os.path.join(
     os.path.dirname(__file__), "assets", "shadow_hand", "scene_retarget.xml"
 )
 
-# Unity left-handed (x right, y up, z forward) -> MuJoCo (x right, y forward, z up).
-_SHADOW_BASIS = BASIS_UNITY_LEFT_TO_RFU
+# Position actuator suffixes for the floating base.
+_BASE_ACTUATORS = ("rh_pos_x_position", "rh_pos_y_position", "rh_pos_z_position")
 
-# All hinge joints to optimize (right hand).
+# Ball joint for wrist rotation (driven via qpos, no actuator).
+_BALL_JOINT = "rh_rot"
+
+# Finger hinge joints to optimize (wrist joints frozen in teleop XML).
 _FINGER_JOINTS = [
-    "rh_WRJ2",
-    "rh_WRJ1",
     "rh_THJ5",
     "rh_THJ4",
     "rh_THJ3",
@@ -69,10 +74,8 @@ _SITE_MAP: dict[JointName, str] = {
     JointName.LITTLE_TIP: "rh_lf_tip",
 }
 
-# Joints with a 1:1 position actuator.
+# Finger joints with a 1:1 position actuator (no wrist — frozen).
 _DIRECT_JOINT_TO_ACTUATOR: dict[str, str] = {
-    "rh_WRJ2": "rh_A_WRJ2",
-    "rh_WRJ1": "rh_A_WRJ1",
     "rh_THJ5": "rh_A_THJ5",
     "rh_THJ4": "rh_A_THJ4",
     "rh_THJ3": "rh_A_THJ3",
@@ -148,6 +151,12 @@ def _parse_args() -> argparse.Namespace:
         default=5e-2,
         help="Regularization weight toward previous joint solution.",
     )
+    parser.add_argument(
+        "--motion-smoothing",
+        type=float,
+        default=0.75,
+        help="Exponential smoothing alpha for wrist pose targets (0-1).",
+    )
     parser.add_argument("--verbose", action="store_true", help="Enable verbose logs.")
     parser.add_argument("--perf", action="store_true", help="Log per-frame timing breakdown.")
     return parser.parse_args()
@@ -162,6 +171,7 @@ def _build_pre_step(
     step_size: float,
     tol: float,
     posture_weight: float,
+    motion_smoothing: float,
 ) -> Any:
     state: dict[str, Any] = {}
 
@@ -169,9 +179,9 @@ def _build_pre_step(
         import mujoco
 
         if not state:
-            # Reset to "open hand" keyframe if available.
+            # Reset to home keyframe if available.
             try:
-                key_id = model.key("open hand").id
+                key_id = model.key("home").id
                 mujoco.mj_resetDataKeyframe(model, data, key_id)
             except Exception:
                 pass
@@ -180,16 +190,43 @@ def _build_pre_step(
             # Head camera tracker.
             cam_id = model.camera(camera_name).id
             state["head_tracker"] = RelativeHeadCamera(
-                model, cam_id, _SHADOW_BASIS,
+                model,
+                cam_id,
+                position_transform=unity_left_to_rfu_position,
+                rotation_matrix_transform=unity_left_to_rfu_rotation_matrix,
             )
 
-            # Build retargeter.
+            # Wrist position tracking via slide actuators.
+            base_ids = [model.actuator(name).id for name in _BASE_ACTUATORS]
+            home_pos = np.array([data.ctrl[i] for i in base_ids])
+
+            # Home rotation must match the keyframe ball-joint quaternion.
+            # The Shadow Hand forearm+wrist bodies rotate fingers to +X;
+            # we apply a 90° Z rotation so fingers face +Y (forward),
+            # matching the human hand's natural tracking direction.
+            home_rot = np.array([[0.0, -1.0, 0.0], [1.0, 0.0, 0.0], [0.0, 0.0, 1.0]])
+
+            wrist_tracker = RelativeWristTracker(
+                None,
+                home_pos,
+                home_rot,
+                position_transform=unity_left_to_rfu_position,
+                rotation_matrix_transform=unity_left_to_rfu_rotation_matrix,
+            )
+
+            # Ball joint addresses for wrist rotation.
+            ball_jid = model.joint(_BALL_JOINT).id
+            ball_qpos_adr = int(model.jnt_qposadr[ball_jid])
+            ball_dof_adr = int(model.jnt_dofadr[ball_jid])
+
+            # Build retargeter for finger joints only.
             retargeter = MujocoVectorRetargeter(
                 model,
                 joint_names=_FINGER_JOINTS,
                 site_by_joint=_SITE_MAP,
                 tasks=default_tasks(),
-                basis=_SHADOW_BASIS,
+                position_transform=unity_left_to_rfu_position,
+                rotation_matrix_transform=unity_left_to_rfu_rotation_matrix,
                 damping=damping,
                 step_size=step_size,
                 max_iters=max_iters,
@@ -215,10 +252,16 @@ def _build_pre_step(
 
             state.update(
                 retargeter=retargeter,
+                base_ids=base_ids,
+                wrist_tracker=wrist_tracker,
+                ball_qpos_adr=ball_qpos_adr,
+                ball_dof_adr=ball_dof_adr,
                 direct_act_ids=np.array(direct_act_ids, dtype=np.int32),
                 direct_q_idx=np.array(direct_q_idx, dtype=np.int32),
                 tendon_act_ids=tendon_act_ids,
                 tendon_q_idx_pairs=tendon_q_idx_pairs,
+                smoothed_pos=None,
+                smoothed_rot=None,
             )
 
         # Head tracking.
@@ -226,11 +269,39 @@ def _build_pre_step(
         if isinstance(head, HeadFrame):
             state["head_tracker"].update(head, model)
 
-        # Right hand retargeting.
+        # Right hand tracking + retargeting.
         frame = latest.get("Right")
         if not isinstance(frame, HandFrame):
             return
 
+        # --- Wrist pose (position via slide actuators, rotation via ball joint) ---
+        target_pos, target_rot = state["wrist_tracker"].update(frame.wrist)
+
+        alpha = float(np.clip(motion_smoothing, 0.0, 1.0))
+        if state["smoothed_pos"] is None:
+            state["smoothed_pos"] = target_pos.copy()
+            state["smoothed_rot"] = target_rot.copy()
+        else:
+            state["smoothed_pos"] = (1.0 - alpha) * state["smoothed_pos"] + alpha * target_pos
+            rot_blend = (1.0 - alpha) * state["smoothed_rot"] + alpha * target_rot
+            u, _, vh = np.linalg.svd(rot_blend)
+            state["smoothed_rot"] = u @ vh
+
+        # Write position to slide actuators.
+        base_ids = state["base_ids"]
+        data.ctrl[base_ids[0]] = state["smoothed_pos"][0]
+        data.ctrl[base_ids[1]] = state["smoothed_pos"][1]
+        data.ctrl[base_ids[2]] = state["smoothed_pos"][2]
+
+        # Write rotation to ball joint qpos (no actuator).
+        quat = np.empty(4)
+        mujoco.mju_mat2Quat(quat, state["smoothed_rot"].flatten())
+        qadr = state["ball_qpos_adr"]
+        data.qpos[qadr : qadr + 4] = quat
+        dadr = state["ball_dof_adr"]
+        data.qvel[dadr : dadr + 3] = 0.0
+
+        # --- Finger retargeting ---
         q = state["retargeter"].solve(frame, full_qpos=data.qpos)
 
         # Write direct joint actuators.
@@ -259,6 +330,7 @@ async def _run() -> int:
             step_size=args.retarget_step,
             tol=args.retarget_tol,
             posture_weight=args.retarget_posture_weight,
+            motion_smoothing=args.motion_smoothing,
         )
 
     perf_hook = build_perf_hook() if args.perf else None
