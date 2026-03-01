@@ -25,11 +25,12 @@ class VideoServiceConfig:
     signaling_host: str = "0.0.0.0"
     signaling_port: int = 8765
     source: str = "test"
-    preset: str = "720p30"
+    preset: str = "720p"
     webcam_index: int = 0
     mj_model_path: str | None = None
     mj_camera: str | None = None
     mj_pre_step: Callable[[Any, Any], None] | None = None
+    mj_perf_hook: Callable[[dict[str, float]], None] | None = None
     stats_interval_s: float = 1.0
     server_version: str = "0.1.0"
     verbose: bool = False
@@ -356,6 +357,7 @@ class VideoService:
                 height=height,
                 fps=fps,
                 pre_step=self._config.mj_pre_step,
+                perf_hook=self._config.mj_perf_hook,
             )
         if source == "webcam":
             return WebcamSourceAdapter(
@@ -390,24 +392,25 @@ class VideoService:
             log_hook=lambda msg: self._log(f"[sender] {msg}"),
         )
 
-    _VALID_PRESETS = ("480p30", "480p60", "720p30", "720p60", "1080p30")
+    _VALID_PRESETS = ("480p", "720p", "1080p")
+
+    # FPS is best-effort (software encoding is the bottleneck).  The value
+    # here only sets the RTP time_base for timestamp calculation.
+    _PRESET_MAP: dict[str, tuple[int, int, int]] = {
+        "480p": (640, 480, 60),
+        "720p": (1280, 720, 60),
+        "1080p": (1920, 1080, 60),
+    }
 
     def _parse_preset(self, preset: str) -> tuple[int, int, int]:
         normalized = preset.lower()
-        if normalized == "480p30":
-            return (640, 480, 30)
-        if normalized == "480p60":
-            return (640, 480, 60)
-        if normalized == "720p30":
-            return (1280, 720, 30)
-        if normalized == "720p60":
-            return (1280, 720, 60)
-        if normalized == "1080p30":
-            return (1920, 1080, 30)
-        raise ValueError(
-            f"Unknown preset {preset!r}; "
-            f"expected one of {self._VALID_PRESETS}"
-        )
+        result = self._PRESET_MAP.get(normalized)
+        if result is None:
+            raise ValueError(
+                f"Unknown preset {preset!r}; "
+                f"expected one of {self._VALID_PRESETS}"
+            )
+        return result
 
     def _parse_fps(self, preset: str) -> int:
         return self._parse_preset(preset)[2]

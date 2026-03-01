@@ -7,7 +7,7 @@ from abc import ABC, abstractmethod
 from collections.abc import Callable
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
-from time import monotonic, monotonic_ns, sleep
+from time import monotonic, monotonic_ns
 from typing import Any
 
 
@@ -144,12 +144,14 @@ class MujocoSourceAdapter(VideoSourceAdapter):
         height: int = 720,
         fps: int = 30,
         pre_step: Callable[[Any, Any], None] | None = None,
+        perf_hook: Callable[[dict[str, float]], None] | None = None,
     ) -> None:
         self._format = VideoFormat(width=width, height=height, fps=fps)
         self._model_path = model_path
         self._camera = camera
         self._camera_arg: Any = camera
         self._pre_step = pre_step
+        self._perf_hook = perf_hook
         self._mujoco: Any = None
         self._model: Any = None
         self._data: Any = None
@@ -208,20 +210,22 @@ class MujocoSourceAdapter(VideoSourceAdapter):
         """Blocking sim step + render — runs in a worker thread."""
         import numpy as np
 
-        # Frame pacing — sleep in the worker thread where time.sleep has
-        # sub-ms resolution (vs asyncio.sleep's ~15.6ms on Windows).
-        target_interval = 1.0 / max(1, self._format.fps)
-        elapsed = monotonic() - self._last_render_ts
-        remaining = target_interval - elapsed
-        if remaining > 0.001:
-            sleep(remaining)
+        perf = self._perf_hook is not None
 
+        # Best-effort frame production — no artificial pacing.  Downstream
+        # H.264 encoding + async round-trip provides natural throttling.
         now = monotonic()
         dt = now - self._last_render_ts
         self._last_render_ts = now
 
+        if perf:
+            t0 = monotonic_ns()
+
         if self._pre_step is not None:
             self._pre_step(self._model, self._data)
+
+        if perf:
+            t1 = monotonic_ns()
 
         # Compute physics steps from actual elapsed wall time so simulation
         # advances at real-time speed regardless of frame rate jitter.
@@ -230,9 +234,27 @@ class MujocoSourceAdapter(VideoSourceAdapter):
 
         for _ in range(n_steps):
             self._mujoco.mj_step(self._model, self._data)
+
+        if perf:
+            t2 = monotonic_ns()
+
         self._renderer.update_scene(self._data, camera=self._camera_arg)
         # Copy the rendered pixels so the renderer buffer can be reused.
-        return np.array(self._renderer.render())
+        pixels = np.array(self._renderer.render())
+
+        if perf:
+            t3 = monotonic_ns()
+            ns_to_ms = 1e-6
+            self._perf_hook({
+                "pre_step_ms": (t1 - t0) * ns_to_ms,
+                "physics_ms": (t2 - t1) * ns_to_ms,
+                "render_ms": (t3 - t2) * ns_to_ms,
+                "total_ms": (t3 - t0) * ns_to_ms,
+                "n_physics_steps": n_steps,
+                "frame_interval_ms": dt * 1000.0,
+            })
+
+        return pixels
 
     async def next_frame(self) -> Any:
         import av

@@ -74,9 +74,9 @@ def _parse_args() -> argparse.Namespace:
     )
     parser.add_argument(
         "--preset",
-        default="480p60",
-        choices=("480p30", "480p60", "720p30", "720p60", "1080p30"),
-        help="Video preset (default 480p60 for responsive teleop).",
+        default="480p",
+        choices=("480p", "720p", "1080p"),
+        help="Video resolution preset (default 480p).",
     )
     parser.add_argument(
         "--left-gripper-actuator",
@@ -89,6 +89,7 @@ def _parse_args() -> argparse.Namespace:
         help="MuJoCo actuator name for right gripper.",
     )
     parser.add_argument("--verbose", action="store_true", help="Enable verbose logs.")
+    parser.add_argument("--perf", action="store_true", help="Log per-frame timing breakdown.")
     return parser.parse_args()
 
 
@@ -301,6 +302,33 @@ def _build_pre_step(
     return pre_step
 
 
+def _build_perf_hook(interval: int = 60) -> Any:
+    """Build a perf_hook that logs averaged timing every *interval* frames."""
+    accum: dict[str, float] = {}
+    count = 0
+
+    def hook(metrics: dict[str, float]) -> None:
+        nonlocal accum, count
+        for k, v in metrics.items():
+            accum[k] = accum.get(k, 0.0) + v
+        count += 1
+        if count >= interval:
+            avg = {k: v / count for k, v in accum.items()}
+            print(
+                f"[perf] avg over {count} frames: "
+                f"pre_step={avg.get('pre_step_ms', 0):.1f}ms "
+                f"physics={avg.get('physics_ms', 0):.1f}ms "
+                f"render={avg.get('render_ms', 0):.1f}ms "
+                f"total={avg.get('total_ms', 0):.1f}ms "
+                f"interval={avg.get('frame_interval_ms', 0):.1f}ms "
+                f"steps={avg.get('n_physics_steps', 0):.0f}"
+            )
+            accum.clear()
+            count = 0
+
+    return hook
+
+
 async def _run() -> int:
     args = _parse_args()
 
@@ -314,6 +342,8 @@ async def _run() -> int:
             right_gripper_actuator=args.right_gripper_actuator,
         )
 
+    perf_hook = _build_perf_hook() if args.perf else None
+
     config = VideoServiceConfig(
         signaling_host=args.tcp_host,
         signaling_port=args.tcp_port,
@@ -322,6 +352,7 @@ async def _run() -> int:
         mj_model_path=args.mj_model,
         mj_camera=args.mj_camera,
         mj_pre_step=pre_step,
+        mj_perf_hook=perf_hook,
         verbose=args.verbose,
     )
     return await run_video_service(config, enable_mocap_tcp=False)

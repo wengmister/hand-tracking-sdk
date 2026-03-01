@@ -32,9 +32,9 @@ def _parse_args() -> argparse.Namespace:
     )
     parser.add_argument(
         "--preset",
-        default="720p30",
-        choices=("480p30", "480p60", "720p30", "720p60", "1080p30"),
-        help="Video preset.",
+        default="720p",
+        choices=("480p", "720p", "1080p"),
+        help="Video resolution preset.",
     )
     parser.add_argument("--webcam-index", type=int, default=0, help="Webcam device index.")
     parser.add_argument("--verbose", action="store_true", help="Enable verbose logs.")

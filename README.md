@@ -121,13 +121,13 @@ pip install "hand-tracking-sdk[video]"
 Run host service with a test pattern source:
 
 ```bash
-uv run --with "hand-tracking-sdk[video]" python examples/video/test_pattern_video_host.py --preset 720p30
+uv run --with "hand-tracking-sdk[video]" python examples/video/test_pattern_video_host.py --preset 720p
 ```
 
 Or stream a local webcam:
 
 ```bash
-uv run --with "hand-tracking-sdk[video]" python examples/video/webcam_video_host.py --preset 720p30
+uv run --with "hand-tracking-sdk[video]" python examples/video/webcam_video_host.py --preset 720p
 ```
 
 Add `--verbose` for handshake/signaling diagnostics.

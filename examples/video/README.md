@@ -12,15 +12,13 @@ Host-side examples for streaming video over WebRTC to a Quest client.
 
 ## Presets
 
-All hosts accept a `--preset` flag to configure resolution and frame rate:
+All hosts accept a `--preset` flag to configure resolution (FPS is best-effort):
 
-| Preset | Resolution | FPS |
-|--------|-----------|-----|
-| `480p30` | 640 x 480 | 30 |
-| `480p60` | 640 x 480 | 60 |
-| `720p30` | 1280 x 720 | 30 |
-| `720p60` | 1280 x 720 | 60 |
-| `1080p30` | 1920 x 1080 | 30 |
+| Preset | Resolution |
+|--------|-----------|
+| `480p` | 640 x 480 |
+| `720p` | 1280 x 720 |
+| `1080p` | 1920 x 1080 |
 
 ## MuJoCo Offscreen Framebuffer
 
