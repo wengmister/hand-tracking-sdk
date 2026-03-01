@@ -1,7 +1,7 @@
 <mujoco model="inspire_right">
   <compiler angle="radian" meshdir="assets" autolimits="true" />
 
-  <option timestep="0.01"
+  <option timestep="0.001"
     iterations="10" ls_iterations="50">
     <flag eulerdamp="disable" />
   </option>

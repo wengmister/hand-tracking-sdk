@@ -128,12 +128,12 @@ def _parse_args() -> argparse.Namespace:
     )
     parser.add_argument("--retarget-iters", type=int, default=5, help="GN iterations per frame.")
     parser.add_argument("--retarget-damping", type=float, default=1e-3, help="LM damping value.")
-    parser.add_argument("--retarget-step", type=float, default=0.5, help="GN step size.")
+    parser.add_argument("--retarget-step", type=float, default=0.75, help="GN step size.")
     parser.add_argument("--retarget-tol", type=float, default=1e-4, help="Early-stop dq norm.")
     parser.add_argument(
         "--retarget-posture-weight",
         type=float,
-        default=5e-2,
+        default=1e-2,
         help="Regularization weight toward previous joint solution.",
     )
     parser.add_argument(
