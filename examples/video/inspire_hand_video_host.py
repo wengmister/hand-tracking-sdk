@@ -1,4 +1,5 @@
-"""Run Inspire bimanual host with lightweight vector retargeting.
+"""
+Run Inspire bimanual video host with lightweight vector retargeting.
 
 This variant keeps the demo structure from other video hosts, but replaces
 hand-crafted finger curl mapping with vector-based optimization from
@@ -14,7 +15,7 @@ from typing import Any
 
 import numpy as np
 
-from _common import build_perf_hook, run_video_service, start_mocap_pump
+from _common import build_base_parser, run_mujoco_host
 from _retarget import MujocoVectorRetargeter, default_tasks
 from _tracking import RelativeHeadCamera, RelativeWristTracker
 
@@ -24,7 +25,6 @@ from hand_tracking_sdk.convert import (
 )
 from hand_tracking_sdk.frame import HandFrame, HeadFrame
 from hand_tracking_sdk.models import JointName
-from hand_tracking_sdk.video.service import VideoServiceConfig
 
 _DEFAULT_MODEL = os.path.join(os.path.dirname(__file__), "assets", "inspire", "scene_bimanual.xml")
 
@@ -95,36 +95,13 @@ _SIDE_CONFIG: dict[str, dict[str, Any]] = {
 
 
 def _parse_args() -> argparse.Namespace:
-    parser = argparse.ArgumentParser(description="Host video service (Inspire vector retarget).")
-    parser.add_argument(
-        "--mj-model",
-        default=_DEFAULT_MODEL,
-        help="Path to MuJoCo XML model (default: bundled Inspire bimanual).",
-    )
-    parser.add_argument("--mj-camera", default="overview", help="MuJoCo camera name or id string.")
-    parser.add_argument("--tcp-host", default="0.0.0.0", help="WebSocket signaling bind host.")
-    parser.add_argument("--tcp-port", type=int, default=8765, help="WebSocket signaling bind port.")
-    parser.add_argument(
-        "--mocap-tcp-host",
-        default="0.0.0.0",
-        help="Telemetry TCP host for Quest mocap stream.",
-    )
-    parser.add_argument(
-        "--mocap-tcp-port",
-        type=int,
-        default=5555,
-        help="Telemetry TCP port for Quest mocap stream.",
-    )
-    parser.add_argument(
-        "--disable-mocap-tcp",
-        action="store_true",
-        help="Disable telemetry TCP listener (sim runs without mocap input).",
-    )
-    parser.add_argument(
-        "--preset",
-        default="480p",
-        choices=("480p", "720p", "1080p"),
-        help="Video resolution preset (default 480p).",
+    parser = build_base_parser(
+        "Host video service (Inspire vector retarget).",
+        mujoco=True,
+        default_mj_model=_DEFAULT_MODEL,
+        default_mj_camera="overview",
+        default_preset="720p",
+        default_mocap_port=5555,
     )
     parser.add_argument("--retarget-iters", type=int, default=5, help="GN iterations per frame.")
     parser.add_argument("--retarget-damping", type=float, default=1e-3, help="LM damping value.")
@@ -142,8 +119,6 @@ def _parse_args() -> argparse.Namespace:
         default=0.75,
         help="Exponential smoothing alpha for wrist pose targets (0-1).",
     )
-    parser.add_argument("--verbose", action="store_true", help="Enable verbose logs.")
-    parser.add_argument("--perf", action="store_true", help="Log per-frame timing breakdown.")
     return parser.parse_args()
 
 
@@ -278,37 +253,25 @@ def _build_pre_step(
     return pre_step
 
 
+def _build_pre_step_from_args(
+    latest: dict[str, HandFrame | HeadFrame],
+    args: argparse.Namespace,
+) -> Any:
+    return _build_pre_step(
+        latest,
+        camera_name=args.mj_camera,
+        max_iters=args.retarget_iters,
+        damping=args.retarget_damping,
+        step_size=args.retarget_step,
+        tol=args.retarget_tol,
+        posture_weight=args.retarget_posture_weight,
+        motion_smoothing=args.motion_smoothing,
+    )
+
+
 async def _run() -> int:
     args = _parse_args()
-
-    pre_step = None
-    if not args.disable_mocap_tcp:
-        latest = start_mocap_pump(args.mocap_tcp_host, args.mocap_tcp_port)
-        pre_step = _build_pre_step(
-            latest,
-            camera_name=args.mj_camera,
-            max_iters=args.retarget_iters,
-            damping=args.retarget_damping,
-            step_size=args.retarget_step,
-            tol=args.retarget_tol,
-            posture_weight=args.retarget_posture_weight,
-            motion_smoothing=args.motion_smoothing,
-        )
-
-    perf_hook = build_perf_hook() if args.perf else None
-
-    config = VideoServiceConfig(
-        signaling_host=args.tcp_host,
-        signaling_port=args.tcp_port,
-        source="mujoco",
-        preset=args.preset,
-        mj_model_path=args.mj_model,
-        mj_camera=args.mj_camera,
-        mj_pre_step=pre_step,
-        mj_perf_hook=perf_hook,
-        verbose=args.verbose,
-    )
-    return await run_video_service(config, enable_mocap_tcp=False)
+    return await run_mujoco_host(args, _build_pre_step_from_args)
 
 
 if __name__ == "__main__":
