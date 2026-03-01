@@ -167,10 +167,16 @@ def _thumb_yaw(frame: HandFrame, ctrl_range: tuple[float, float]) -> float:
     return lo + t * (hi - lo)
 
 
-def _scale_curl(angle: float, joint_range: tuple[float, float]) -> float:
-    """Scale a curl angle (0 to π) to a joint range."""
+def _scale_curl(
+    angle: float, joint_range: tuple[float, float], gain: float = 2.0
+) -> float:
+    """Scale a curl angle (0 to π) to a joint range.
+
+    *gain* amplifies the mapping so that natural Quest curl (~π/2) can
+    reach the full joint range.  Default 2.0 means π/2 → full curl.
+    """
     lo, hi = joint_range
-    t = angle / math.pi
+    t = gain * angle / math.pi
     t = max(0.0, min(1.0, t))
     return lo + t * (hi - lo)
 
@@ -303,7 +309,7 @@ def _build_pre_step(
             idx += 1
             for ci in range(3):
                 aid, lo, hi = finfo[idx]
-                data.ctrl[aid] = _scale_curl(curls["thumb"][ci], (lo, hi))
+                data.ctrl[aid] = _scale_curl(curls["thumb"][ci], (lo, hi), gain=3.0)
                 idx += 1
 
             # Remaining fingers (2 DOF each): proximal + intermediate curls.
