@@ -23,7 +23,7 @@
     <light pos="0 0 1"/>
     <light pos="0 0 1.5" dir="0 0 -1" directional="true"/>
     <geom name="floor" pos="0 0 -0.1" size="0 0 0.05" type="plane" material="groundplane"/>
-    <camera name="overview" pos="0 -0.5 0.5" xyaxes="1 0 0 0 0.574 0.819" fovy="60"/>
+    <camera name="overview" pos="0 -0.7 0.8" xyaxes="1 0 0 0 0.574 0.819" fovy="60"/>
   </worldbody>
 
   <!-- Both hands palm-down, fingers forward. Ball joint quat 0 0.7071 0.7071 0 -->
