@@ -6,7 +6,7 @@ Host-side examples for streaming video over WebRTC to a Quest client.
 
 | Script | Source | Description |
 |--------|--------|-------------|
-| `mujoco_video_host.py` | MuJoCo sim | ALOHA bimanual robot with optional mocap-driven teleop via mink IK |
+| `aloha_video_host.py` | MuJoCo sim | ALOHA bimanual robot with optional mocap-driven teleop via mink IK |
 | `webcam_video_host.py` | Webcam | Streams a local webcam feed |
 | `test_pattern_video_host.py` | Synthetic | Color-bar test pattern for connectivity debugging |
 

@@ -140,3 +140,30 @@ async def run_video_service(
             sink_server.close()
             await sink_server.wait_closed()
     return 0
+
+
+def build_perf_hook(interval: int = 60) -> Any:
+    """Build a perf_hook that logs averaged timing every *interval* frames."""
+    accum: dict[str, float] = {}
+    count = 0
+
+    def hook(metrics: dict[str, float]) -> None:
+        nonlocal accum, count
+        for k, v in metrics.items():
+            accum[k] = accum.get(k, 0.0) + v
+        count += 1
+        if count >= interval:
+            avg = {k: v / count for k, v in accum.items()}
+            print(
+                f"[perf] avg over {count} frames: "
+                f"pre_step={avg.get('pre_step_ms', 0):.1f}ms "
+                f"physics={avg.get('physics_ms', 0):.1f}ms "
+                f"render={avg.get('render_ms', 0):.1f}ms "
+                f"total={avg.get('total_ms', 0):.1f}ms "
+                f"interval={avg.get('frame_interval_ms', 0):.1f}ms "
+                f"steps={avg.get('n_physics_steps', 0):.0f}"
+            )
+            accum.clear()
+            count = 0
+
+    return hook
