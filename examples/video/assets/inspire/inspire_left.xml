@@ -7,10 +7,8 @@
     </option>
 
     <default>
-        <!-- disable all contacts and use explicit collision pairs -->
         <geom density="800" condim="1" contype="0" conaffinity="0" />
-        <!-- with this setting, the response time is around 1s -->
-        <position kp="300" dampratio="1.0" inheritrange="1" />
+        <position kp="400" dampratio="1.0" inheritrange="1" />
         <joint damping="0.0" armature="1.0" frictionloss="0.0" />
         <site size="0.01" type="sphere" rgba="1 0 0 1" group="3" />
     </default>
@@ -51,9 +49,7 @@
             <joint name="left_pos_x" type="slide" pos="0 0 0" axis="1 0 0" range="-1.0 1.0" />
             <joint name="left_pos_y" type="slide" pos="0 0 0" axis="0 1 0" range="-1.0 1.0" />
             <joint name="left_pos_z" type="slide" pos="0 0 0" axis="0 0 1" range="-1.0 1.0" />
-            <joint name="left_rot_x" type="hinge" pos="0 0 0" axis="1 0 0" range="-6.28 6.28" />
-            <joint name="left_rot_y" type="hinge" pos="0 0 0" axis="0 1 0" range="-6.28 6.28" />
-            <joint name="left_rot_z" type="hinge" pos="0 0 0" axis="0 0 1" range="-6.28 6.28" />
+            <joint name="left_rot" type="ball" pos="0 0 0" />
             <!-- Fixed pre-rotation: palms down, fingers +Y when hinge joints are at zero.
                  Avoids XYZ Euler gimbal lock at β=±π/2. -->
             <body name="left_hand_orient" quat="0 0.7071 0 0.7071">
@@ -264,7 +260,7 @@
                         pos="-0.00260734 -0.0362776 -0.00501047" />
                 </body>
             </body>
-            </body> <!-- left_hand_orient -->
+            </body>
         </body>
     </worldbody>
 
@@ -273,28 +269,20 @@
         <position name="left_pos_x_position" joint="left_pos_x" kp="1000" />
         <position name="left_pos_y_position" joint="left_pos_y" kp="1000" />
         <position name="left_pos_z_position" joint="left_pos_z" kp="1000" />
-        <position name="left_rot_x_position" joint="left_rot_x" kp="1000" />
-        <position name="left_rot_y_position" joint="left_rot_y" kp="1000" />
-        <position name="left_rot_z_position" joint="left_rot_z" kp="1000" />
-
         <!-- Thumb joints -->
         <position name="left_thumb_proximal_yaw_position" joint="left_thumb_proximal_yaw_joint" />
         <position name="left_thumb_proximal_pitch_position" joint="left_thumb_proximal_pitch_joint" />
         <position name="left_thumb_intermediate_position" joint="left_thumb_intermediate_joint" />
         <position name="left_thumb_distal_position" joint="left_thumb_distal_joint" />
-
         <!-- Index joints -->
         <position name="left_index_proximal_position" joint="left_index_proximal_joint" />
         <position name="left_index_intermediate_position" joint="left_index_intermediate_joint" />
-
         <!-- Middle joints -->
         <position name="left_middle_proximal_position" joint="left_middle_proximal_joint" />
         <position name="left_middle_intermediate_position" joint="left_middle_intermediate_joint" />
-
         <!-- Ring joints -->
         <position name="left_ring_proximal_position" joint="left_ring_proximal_joint" />
         <position name="left_ring_intermediate_position" joint="left_ring_intermediate_joint" />
-
         <!-- Pinky joints -->
         <position name="left_pinky_proximal_position" joint="left_pinky_proximal_joint" />
         <position name="left_pinky_intermediate_position" joint="left_pinky_intermediate_joint" />

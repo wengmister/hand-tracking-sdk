@@ -1,5 +1,6 @@
 <mujoco model="inspire_bimanual_scene">
-  <include file="inspire_bimanual.xml"/>
+  <include file="inspire_right.xml"/>
+  <include file="inspire_left.xml"/>
 
   <visual>
     <global offwidth="1920" offheight="1080"/>
@@ -12,15 +13,16 @@
   </worldbody>
 
   <keyframe>
-    <!-- Per hand (18 DOF): pos_x pos_y pos_z  rot_x rot_y rot_z  12×finger -->
-    <!-- Rotation is (0,0,0): palms-down orientation is baked into the orient body quat -->
+    <!-- Per hand qpos (19): pos_x pos_y pos_z  quat_w quat_x quat_y quat_z  12×finger -->
+    <!-- Per hand ctrl (15): pos_x pos_y pos_z  12×finger (rotation via qpos, no actuator) -->
+    <!-- Palms-down orientation is baked into the orient body quat -->
     <key name="home"
       qpos="
-        0.12 0 0.05  0 0 0  0 0 0 0 0 0 0 0 0 0 0 0
-       -0.12 0 0.05  0 0 0  0 0 0 0 0 0 0 0 0 0 0 0"
+        0.12 0 0.05  1 0 0 0  0 0 0 0 0 0 0 0 0 0 0 0
+       -0.12 0 0.05  1 0 0 0  0 0 0 0 0 0 0 0 0 0 0 0"
       ctrl="
-        0.12 0 0.05  0 0 0  0 0 0 0 0 0 0 0 0 0 0 0
-       -0.12 0 0.05  0 0 0  0 0 0 0 0 0 0 0 0 0 0 0"
+        0.12 0 0.05  0 0 0 0 0 0 0 0 0 0 0 0
+       -0.12 0 0.05  0 0 0 0 0 0 0 0 0 0 0 0"
     />
   </keyframe>
 </mujoco>

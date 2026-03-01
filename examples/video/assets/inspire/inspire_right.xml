@@ -7,10 +7,8 @@
   </option>
 
   <default>
-    <!-- disable all contacts and use explicit collision pairs -->
     <geom density="800" condim="1" contype="0" conaffinity="0" />
-    <!-- with this setting, the response time is around 1s -->
-    <position kp="300" dampratio="1.0" inheritrange="1" />
+    <position kp="400" dampratio="1.0" inheritrange="1" />
     <joint damping="0.0" armature="1.0" frictionloss="0.0" />
     <site size="0.005" type="sphere" rgba="1 0 0 1" group="3" />
   </default>
@@ -53,9 +51,7 @@
       <joint name="right_pos_x" type="slide" pos="0 0 0" axis="1 0 0" range="-1.0 1.0" />
       <joint name="right_pos_y" type="slide" pos="0 0 0" axis="0 1 0" range="-1.0 1.0" />
       <joint name="right_pos_z" type="slide" pos="0 0 0" axis="0 0 1" range="-1.0 1.0" />
-      <joint name="right_rot_x" type="hinge" pos="0 0 0" axis="1 0 0" range="-6.28 6.28" />
-      <joint name="right_rot_y" type="hinge" pos="0 0 0" axis="0 1 0" range="-6.28 6.28" />
-      <joint name="right_rot_z" type="hinge" pos="0 0 0" axis="0 0 1" range="-6.28 6.28" />
+      <joint name="right_rot" type="ball" pos="0 0 0" />
       <!-- Fixed pre-rotation: palms down, fingers +Y when hinge joints are at zero.
            Avoids XYZ Euler gimbal lock at β=±π/2. -->
       <body name="right_hand_orient" quat="0 0.7071 0 0.7071">
@@ -105,11 +101,6 @@
                 rgba="0.1 0.1 0.1 1"
                 mesh="Link14_R" />
               <geom type="mesh" rgba="0.1 0.1 0.1 1" mesh="Link14_R" />
-              <!-- <geom name="collision_hand_right_thumb_0" type="capsule"
-              size="0.005"
-                  fromto="0 0 0 0.0159104 0.0156076 -0.00599021"
-                  contype="0" conaffinity="0"
-                  group="3" density="0" rgba="0 1 0 1" /> -->
               <geom name="collision_hand_right_thumb_0" type="capsule" size="0.005"
                 fromto="-0.01 -0.01 0 0.0159104 0.0156076 -0.00599021"
                 contype="0" conaffinity="0"
@@ -232,10 +223,6 @@
           <geom type="mesh" contype="0" conaffinity="0" group="1" density="0" rgba="0.1 0.1 0.1 1"
             mesh="Link22_R" />
           <geom type="mesh" rgba="0.1 0.1 0.1 1" mesh="Link22_R" />
-          <!-- <geom name="right_pinky_collision" size="0.005"
-            pos="-0.00260734 0.0362776 -0.00501047"
-            contype="0" conaffinity="0"
-            group="3" density="0" rgba="0 1 0 1" /> -->
           <geom name="collision_hand_right_pinky_0" type="capsule" size="0.005"
             fromto="0.004 -0.0 -0.005 -0.00260734 0.0362776 -0.00501047"
             contype="0" conaffinity="0"
@@ -247,7 +234,7 @@
             pos="-0.00260734 0.0362776 -0.00501047" />
         </body>
       </body>
-      </body> <!-- right_hand_orient -->
+      </body>
     </body>
   </worldbody>
 
@@ -256,10 +243,6 @@
     <position name="right_pos_x_position" joint="right_pos_x" kp="1000" />
     <position name="right_pos_y_position" joint="right_pos_y" kp="1000" />
     <position name="right_pos_z_position" joint="right_pos_z" kp="1000" />
-    <position name="right_rot_x_position" joint="right_rot_x" kp="1000" />
-    <position name="right_rot_y_position" joint="right_rot_y" kp="1000" />
-    <position name="right_rot_z_position" joint="right_rot_z" kp="1000" />
-
 
     <!-- Thumb joints -->
     <position name="right_thumb_proximal_yaw_position" joint="right_thumb_proximal_yaw_joint" />
@@ -267,21 +250,17 @@
     <position name="right_thumb_intermediate_position" joint="right_thumb_intermediate_joint" />
     <position name="right_thumb_distal_position" joint="right_thumb_distal_joint" />
 
-
     <!-- Index joints -->
     <position name="right_index_proximal_position" joint="right_index_proximal_joint" />
     <position name="right_index_intermediate_position" joint="right_index_intermediate_joint" />
-
 
     <!-- Middle joints -->
     <position name="right_middle_proximal_position" joint="right_middle_proximal_joint" />
     <position name="right_middle_intermediate_position" joint="right_middle_intermediate_joint" />
 
-
     <!-- Ring joints -->
     <position name="right_ring_proximal_position" joint="right_ring_proximal_joint" />
     <position name="right_ring_intermediate_position" joint="right_ring_intermediate_joint" />
-
 
     <!-- Pinky joints -->
     <position name="right_pinky_proximal_position" joint="right_pinky_proximal_joint" />

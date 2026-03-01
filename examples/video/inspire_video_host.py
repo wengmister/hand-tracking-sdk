@@ -35,8 +35,8 @@ _INSPIRE_BASIS = (
     (0.0, 1.0, 0.0),
 )
 
-# Base actuator suffixes (position then rotation).
-_BASE_SUFFIXES = ("pos_x", "pos_y", "pos_z", "rot_x", "rot_y", "rot_z")
+# Position actuator suffixes.  Rotation uses a ball joint (quaternion in qpos).
+_POS_SUFFIXES = ("pos_x", "pos_y", "pos_z")
 
 # Finger joint suffixes per finger, ordered to match curl angle output.
 # Thumb's first entry (yaw) is handled via _thumb_yaw(), rest from curl angles.
@@ -99,31 +99,6 @@ def _parse_args() -> argparse.Namespace:
 # ---------------------------------------------------------------------------
 # Math helpers
 # ---------------------------------------------------------------------------
-
-
-def _decompose_xyz_euler(rot: Any) -> tuple[float, float, float]:
-    """Decompose a 3x3 rotation matrix into intrinsic XYZ Euler angles.
-
-    For the joint chain rot_x → rot_y → rot_z, the combined rotation is
-    R = Rx(α) @ Ry(β) @ Rz(γ).
-
-    Returns (α, β, γ) in radians.
-    """
-    # R[0,2] = sin(β)
-    sy = float(rot[0, 2])
-    sy = max(-1.0, min(1.0, sy))
-    beta = math.asin(sy)
-
-    if abs(sy) < 0.9999:
-        # Non-gimbal-lock case.
-        alpha = math.atan2(-float(rot[1, 2]), float(rot[2, 2]))
-        gamma = math.atan2(-float(rot[0, 1]), float(rot[0, 0]))
-    else:
-        # Gimbal lock: set γ=0, solve α from remaining.
-        gamma = 0.0
-        alpha = math.atan2(float(rot[1, 0]), float(rot[1, 1]))
-
-    return (alpha, beta, gamma)
 
 
 def _vec_sub(
@@ -212,21 +187,29 @@ def _build_pre_step(
             mujoco.mj_resetDataKeyframe(model, data, key_id)
             mujoco.mj_forward(model, data)
 
-            # Resolve actuator IDs and control ranges from the model.
-            base_ids: dict[str, list[int]] = {}
+            # Resolve actuator IDs, ball-joint addresses, and control ranges.
+            pos_ids: dict[str, list[int]] = {}
+            ball_qpos_addr: dict[str, int] = {}
+            ball_dof_addr: dict[str, int] = {}
             finger_info: dict[str, list[tuple[int, float, float]]] = {}
             initial_pos: dict[str, Any] = {}
 
             for side in ("left", "right"):
+                # Position actuators (slide joints, driven via ctrl).
                 ids = [
-                    model.actuator(f"{side}_{s}_position").id for s in _BASE_SUFFIXES
+                    model.actuator(f"{side}_{s}_position").id for s in _POS_SUFFIXES
                 ]
-                base_ids[side] = ids
+                pos_ids[side] = ids
 
                 # Read home position from keyframe ctrl values.
                 initial_pos[side] = np.array([
                     data.ctrl[ids[0]], data.ctrl[ids[1]], data.ctrl[ids[2]],
                 ])
+
+                # Ball joint addresses (rotation set directly in qpos).
+                jid = model.joint(f"{side}_rot").id
+                ball_qpos_addr[side] = model.jnt_qposadr[jid]
+                ball_dof_addr[side] = model.jnt_dofadr[jid]
 
                 info: list[tuple[int, float, float]] = []
                 for joints in _FINGER_JOINTS.values():
@@ -245,7 +228,9 @@ def _build_pre_step(
             cam_default_rot = cam_default_mat.reshape(3, 3).copy()
 
             state.update(
-                base_ids=base_ids,
+                pos_ids=pos_ids,
+                ball_qpos_addr=ball_qpos_addr,
+                ball_dof_addr=ball_dof_addr,
                 finger_info=finger_info,
                 initial_pos=initial_pos,
                 cam_id=cam_id,
@@ -253,7 +238,7 @@ def _build_pre_step(
                 cam_default_rot=cam_default_rot,
             )
 
-        base_ids = state["base_ids"]
+        pos_ids = state["pos_ids"]
         finger_info = state["finger_info"]
 
         side_map = {"left": "Left", "right": "Right"}
@@ -264,7 +249,7 @@ def _build_pre_step(
                 continue
 
             w = frame.wrist
-            ids = base_ids[side]
+            ids = pos_ids[side]
 
             cur_pos = np.array(
                 basis_transform_position((w.x, w.y, w.z), _INSPIRE_BASIS)
@@ -272,14 +257,17 @@ def _build_pre_step(
             cur_rot = np.array(
                 basis_transform_rotation_matrix(w.qx, w.qy, w.qz, w.qw, _INSPIRE_BASIS)
             )
+            # Convert rotation matrix to quaternion for ball joint.
+            cur_quat = np.empty(4)
+            mujoco.mju_mat2Quat(cur_quat, cur_rot.flatten())
 
             # --- Relative wrist tracking ---
             ref_key = f"ref_{side}"
             if ref_key not in state:
                 # First frame for this hand: record as reference.
-                state[ref_key] = (cur_pos.copy(), cur_rot.copy())
+                state[ref_key] = (cur_pos.copy(), cur_quat.copy())
 
-            ref_pos, ref_rot = state[ref_key]
+            ref_pos, ref_quat = state[ref_key]
             home_pos = state["initial_pos"][side]
 
             # Position: home + delta from first Quest frame.
@@ -288,28 +276,35 @@ def _build_pre_step(
             data.ctrl[ids[1]] = target_pos[1]
             data.ctrl[ids[2]] = target_pos[2]
 
-            # Rotation: the palm-down orientation is baked into the orient body
-            # quat in the XML, so the hinge joints only represent the rotation
-            # delta from the user's initial hand pose.  Near identity the XYZ
-            # Euler decomposition is well-conditioned (β ≈ 0, far from ±π/2).
-            delta_rot = cur_rot @ ref_rot.T
-            alpha, beta, gamma = _decompose_xyz_euler(delta_rot)
-            data.ctrl[ids[3]] = alpha
-            data.ctrl[ids[4]] = beta
-            data.ctrl[ids[5]] = gamma
+            # Rotation: ball joint uses quaternion — no Euler decomposition,
+            # no gimbal lock.  delta = cur * ref^{-1} (conjugate for unit quat).
+            ref_conj = np.array([
+                ref_quat[0], -ref_quat[1], -ref_quat[2], -ref_quat[3],
+            ])
+            delta_quat = np.empty(4)
+            mujoco.mju_mulQuat(delta_quat, cur_quat, ref_conj)
+
+            qa = state["ball_qpos_addr"][side]
+            da = state["ball_dof_addr"][side]
+            data.qpos[qa : qa + 4] = delta_quat
+            data.qvel[da : da + 3] = 0.0
 
             # --- Finger retargeting (scale-independent, no change needed) ---
             curls = finger_curl_angles(frame)
             finfo = finger_info[side]
             idx = 0
 
-            # Thumb (4 DOF): yaw from spread, then 3 curl angles.
+            # Thumb (2 effective DOF): yaw + uniform curl.  The physical
+            # Inspire thumb has one motor driving all flex joints together.
+            # SDK curl[0] (metacarpal) is near-zero; average curl[1]+[2].
             aid, lo, hi = finfo[idx]
             data.ctrl[aid] = _thumb_yaw(frame, (lo, hi))
             idx += 1
-            for ci in range(3):
+            thumb_curls = curls["thumb"]
+            thumb_curl = (thumb_curls[1] + thumb_curls[2]) / 2.0
+            for _ in range(3):
                 aid, lo, hi = finfo[idx]
-                data.ctrl[aid] = _scale_curl(curls["thumb"][ci], (lo, hi), gain=3.0)
+                data.ctrl[aid] = _scale_curl(thumb_curl, (lo, hi), gain=3.0)
                 idx += 1
 
             # Remaining fingers (2 DOF each): proximal + intermediate curls.
