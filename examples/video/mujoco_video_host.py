@@ -103,12 +103,14 @@ def _build_pre_step(
     *,
     left_gripper_actuator: str,
     right_gripper_actuator: str,
+    camera_name: str = "teleop_overview",
     grip_config: GripConfig | None = None,
 ) -> Any:
     """Build a pre_step callback that applies mocap state to MuJoCo via IK.
 
     Uses mink inverse kinematics to map wrist poses from incoming hand
     frames to joint-position actuator commands for the ALOHA arms.
+    Head tracking drives 3-DOF camera rotation on *camera_name*.
     Gripper control is derived from pinch distance.
     """
     if grip_config is None:
@@ -183,6 +185,14 @@ def _build_pre_step(
             l_site_id = model.site("left/gripper").id
             r_site_id = model.site("right/gripper").id
 
+            # Camera rotation from head tracking.
+            cam_id = model.camera(camera_name).id
+            # model.cam_quat is (w,x,y,z); convert to 3x3 for delta math.
+            cam_q = model.cam_quat[cam_id].copy()
+            initial_cam_rot = np.empty(9)
+            mujoco.mju_quat2Mat(initial_cam_rot, cam_q)
+            initial_cam_rot = initial_cam_rot.reshape(3, 3)
+
             state.update(
                 mink=mink,
                 configuration=configuration,
@@ -203,6 +213,9 @@ def _build_pre_step(
                 ref_left_rot=None,
                 ref_right_pos=None,
                 ref_right_rot=None,
+                cam_id=cam_id,
+                initial_cam_rot=initial_cam_rot,
+                ref_head_rot=None,
             )
 
         # ---- per-frame IK solve ----
@@ -219,6 +232,23 @@ def _build_pre_step(
         configuration.update(data.qpos)
 
         dt = 1.0 / 30.0  # Match video frame rate.
+
+        # === Head tracking → camera rotation ===
+        head = latest.get("Head")
+        if isinstance(head, HeadFrame):
+            h = head.head
+            cur_rot = np.array(
+                basis_transform_rotation_matrix(
+                    h.qx, h.qy, h.qz, h.qw, _ALOHA_BASIS
+                )
+            )
+            if state["ref_head_rot"] is None:
+                state["ref_head_rot"] = cur_rot.copy()
+            delta_rot = cur_rot @ state["ref_head_rot"].T
+            new_cam_rot = delta_rot @ state["initial_cam_rot"]
+            cam_quat = np.empty(4)
+            mujoco.mju_mat2Quat(cam_quat, new_cam_rot.flatten())
+            model.cam_quat[state["cam_id"]] = cam_quat
 
         left = latest.get("Left")
         right = latest.get("Right")
@@ -340,6 +370,7 @@ async def _run() -> int:
             latest,
             left_gripper_actuator=args.left_gripper_actuator,
             right_gripper_actuator=args.right_gripper_actuator,
+            camera_name=args.mj_camera,
         )
 
     perf_hook = _build_perf_hook() if args.perf else None
