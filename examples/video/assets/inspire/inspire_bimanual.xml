@@ -1,0 +1,4 @@
+<mujoco model="inspire_bimanual">
+    <include file="inspire_right.xml" />
+    <include file="inspire_left.xml" />
+</mujoco>
