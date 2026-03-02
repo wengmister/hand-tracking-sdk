@@ -2,6 +2,10 @@
 
 Pre-release test for the Quest-to-PC video streaming pipeline.
 
+
+![beta instruction](https://github.com/user-attachments/assets/f12a3644-eda6-493e-acb8-ddf2dc014c9f)
+
+
 ## What you need
 
 - Meta Quest 3 or 3S
@@ -18,7 +22,7 @@ Download the `.apk` from the `feat/videostream` branch and sideload:
 adb install hand-tracking-streamer.apk
 ```
 
-APK: https://github.com/wengmister/hand-tracking-streamer/tree/feat/videostream
+APK: [https://github.com/wengmister/hand-tracking-streamer/tree/feat/videostream/hand_tracking_streamer.apk](https://github.com/wengmister/hand-tracking-streamer/blob/feat/videostream/hand_tracking_streamer.apk)
 
 ### 2. SDK
 
