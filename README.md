@@ -4,276 +4,24 @@ Python SDK for consuming telemetry from [Hand Tracking Streamer (HTS)](https://g
 
 ## Overview
 
-HTS streams UTF-8 CSV lines for wrist pose and hand landmarks.  
-This SDK provides typed parsing and validation for:
-- wrist packets: 7 floats (`x, y, z, qx, qy, qz, qw`)
-- landmark packets: 63 floats (`21 x [x, y, z]`)
-- optional head pose packets: 7 floats (`x, y, z, qx, qy, qz, qw`)
-
-Streamed joints are in Mediapipe-style 21 landmark points.
+HTS streams UTF-8 CSV lines for wrist pose, hand landmarks, and head pose from
+Meta Quest headsets. This SDK provides typed parsing, frame assembly, coordinate
+conversion, and high-level streaming — plus WebRTC video hosts for closing a
+full simulation teleop loop.
 
 >[!IMPORTANT]
-> Pre-release: This library is under active development. Expect breaking changes to come.
+> Pre-release: This library is under active development. Expect breaking changes.
 
-## Transport API
-
-The SDK includes socket transport primitives for line-based ingestion:
-- `UDPLineReceiver`
-- `TCPServerLineReceiver`
-- `TCPClientLineReceiver`
-
-Network timeout and disconnect behavior is reported through typed exceptions:
-- `TransportTimeoutError`
-- `TransportDisconnectedError`
-- `TransportClosedError`
-
-## Frame Assembly API
-
-Use `HandFrameAssembler` to combine wrist and landmark packets into coherent per-hand frames.
-
-- Emits a frame only after both components are present for a hand.
-- Head pose packets are parsed but intentionally excluded from hand frame assembly.
-- Ignores stale out-of-order updates (older receive timestamps).
-- Increments `sequence_id` per hand side on each newly emitted frame.
-- Supports:
-  - `recv_ts_ns` (monotonic receive time)
-  - `recv_time_unix_ns` (optional wall-clock receive time)
-  - `source_ts_ns` (optional upstream timestamp; currently caller-provided)
-
-## Coordinate Conversion API
-
-The SDK provides explicit Unity-left-handed to right-handed conversion helpers:
-- `unity_left_to_right_position`
-- `unity_left_to_right_quaternion`
-- `convert_wrist_pose_unity_left_to_right`
-- `convert_landmarks_unity_left_to_right`
-- `convert_hand_frame_unity_left_to_right`
-
-Current conversion profile:
-- position: flip Y sign (`x, y, z -> x, -y, z`)
-- orientation: basis transform equivalent to Y-axis reflection
-
-```python
-from hand_tracking_sdk import (
-    HandFrameAssembler,
-    convert_hand_frame_unity_left_to_right,
-)
-
-assembler = HandFrameAssembler()
-frame = assembler.push_line("Right wrist:, 0.1, 0.2, 0.3, 0.0, 0.0, 0.0, 1.0")
-if frame is not None:
-    converted = convert_hand_frame_unity_left_to_right(frame)
-```
-
-## Optional Visualization (Rerun)
-
-Install visualization extras:
+## Installation
 
 ```bash
-pip install "hand-tracking-sdk[visualization]"
+pip install hand-tracking-sdk                      # core SDK
+pip install "hand-tracking-sdk[visualization]"     # + Rerun 3D viewer
+pip install "hand-tracking-sdk[video]"             # + WebRTC video host
+pip install "hand-tracking-sdk[video,sim]"         # + MuJoCo simulation
 ```
 
-Basic usage:
-
-```python
-from hand_tracking_sdk import HTSClient, HTSClientConfig, RerunVisualizer, StreamOutput
-
-client = HTSClient(HTSClientConfig(output=StreamOutput.BOTH))
-visualizer = RerunVisualizer()
-
-for event in client.iter_events():
-    visualizer.log_event(event)
-```
-
-Head pose visualization is supported when head packets are present:
-- use `--output both` to visualize packet-level `Head pose`
-- use `--output frames` to visualize `HeadFrame` events
-
-CLI example script:
-
-```bash
-uv run --with rerun-sdk python examples/visualize_rerun.py --transport tcp_server --host 0.0.0.0 --port 8000
-```
-
-The rerun example now also logs jitter/drop metrics under `metrics/jitter/<side>/...`
-when `--show-jitter-panel` is enabled.
-You can also render wrist/head coordinate axes with `--show-coordinate-frames`.
-
-By default, the visualizer converts Unity left-handed coordinates to right-handed view.
-Landmarks are treated as wrist-relative and rendered in the corresponding wrist frame.
-Landmark colors are per hand by default: left=blue, right=red.
-The 3D view uses a dark background and FLU frame (`x=forward, y=left, z=up`).
-
-Other example scripts:
-- frame-only stream summary:
-  `uv run python examples/stream_frames.py --transport tcp_server --host 0.0.0.0 --port 8000`
-- JSONL capture for replay/analysis:
-  `uv run python examples/log_to_jsonl.py --transport tcp_server --host 0.0.0.0 --port 8000 --output both --path runs/hand_tracking.jsonl`
-
-## Optional Video Host Service (WebRTC + WebSocket)
-
-Install video extras:
-
-```bash
-pip install "hand-tracking-sdk[video]"
-```
-
-Run host service with a test pattern source:
-
-```bash
-uv run --with "hand-tracking-sdk[video]" python examples/video/test_pattern_video_host.py --preset 720p
-```
-
-Or stream a local webcam:
-
-```bash
-uv run --with "hand-tracking-sdk[video]" python examples/video/webcam_video_host.py --preset 720p
-```
-
-Add `--verbose` for handshake/signaling diagnostics.
-
-This service exposes:
-- control/signaling over WebSocket (`type`, `session_id`, `payload`)
-- one outbound WebRTC H.264 video stream
-- test pattern, webcam, or MuJoCo source adapters
-
-### Simulation Teleop (MuJoCo)
-
-Install video and simulation extras:
-
-```bash
-pip install "hand-tracking-sdk[video,sim]"
-```
-
-The sim teleop example closes the full loop: Quest sends hand + head mocap via TCP,
-Python drives a MuJoCo simulation with the received poses, and the simulation camera
-streams back to the Quest headset over WebRTC.
-
-```
-Quest 3/3S ──TCP──► HTSClient (daemon thread) ──► MuJoCo pre_step
-                                                       │
-                                                   mj_step + render
-                                                       │
-                                             WebRTC H.264 ◄──────┘
-                                                   │
-Quest 3/3S ◄──────────────────────────────────────┘
-```
-
-Run with the bundled ALOHA model:
-
-```bash
-uv run --with "hand-tracking-sdk[video,sim]" python examples/video/mujoco_video_host.py
-```
-
-Or supply your own MuJoCo model:
-
-```bash
-uv run --with "hand-tracking-sdk[video,sim]" python examples/video/mujoco_video_host.py \
-    --mj-model path/to/model.xml \
-    --mj-camera overview \
-    --left-gripper-actuator left_gripper \
-    --right-gripper-actuator right_gripper
-```
-
-The example uses [mink](https://github.com/kenji-miyake/mink) for inverse kinematics
-to map wrist poses to joint angles. Gripper control is derived from thumb-to-index
-pinch distance via the `hand_tracking_sdk.teleop` module (`pinch_distance`,
-`grip_value`, `extract_arm_target`). Gravity compensation is applied per-arm.
-
-The `MujocoSourceAdapter` accepts a `pre_step` callback that receives `(model, data)`
-before each `mj_step()`. The example uses `HTSClient` in a daemon thread for TCP
-ingestion, frame assembly, and coordinate conversion.
-
-## Streaming Client API
-
-`HTSClient` provides a high-level sync stream with filtering and error policy controls.
-
-Key controls:
-- transport mode: `udp`, `tcp_server`, `tcp_client`
-- output mode: `packets`, `frames`, `both`
-- hand filter: `left`, `right`, `both`
-- parse error policy: `strict` (raise) or `tolerant` (skip malformed lines)
-
-```python
-from hand_tracking_sdk import HTSClient, HTSClientConfig, StreamOutput
-
-client = HTSClient(
-    HTSClientConfig(
-        output=StreamOutput.BOTH,  # packets + assembled frames
-    )
-)
-
-for event in client.iter_events():
-    print(event)
-```
-
-## What HTS Sends
-
-HTS emits UTF-8 CSV lines:
-- wrist packet: 7 floats (`x, y, z, qx, qy, qz, qw`)
-- landmarks packet: 63 floats (`21 x [x, y, z]`)
-- optional head pose packet: 7 floats (`x, y, z, qx, qy, qz, qw`)
-
-Head pose data is optional and appears only when the sender enables head tracking.
-Hand-only streams (wrist + landmarks) remain fully supported.
-
-The SDK validates packet labels, hand side, and exact value counts.
-
-## Core APIs
-
-- Streaming client:
-  - `HTSClient`, `HTSClientConfig`
-  - output modes: `packets`, `frames`, `both`
-  - transport modes: `udp`, `tcp_server`, `tcp_client`
-- Frame assembly:
-  - `HandFrameAssembler`
-  - emits a frame only when both wrist and landmarks are available
-  - optional `HeadFrame` emission in `frames` mode when head packets are present
-- Coordinate conversion:
-  - `unity_left_to_right_position`
-  - `unity_left_to_right_quaternion`
-  - `convert_wrist_pose_unity_left_to_right`
-  - `convert_landmarks_unity_left_to_right`
-  - `convert_hand_frame_unity_left_to_right`
-- Parsing:
-  - `parse_line`
-
-## Observability
-
-`HTSClient` exposes runtime counters and structured log hooks:
-- `get_stats()` / `reset_stats()`
-- `ClientStats` counters:
-  - `lines_received`, `parse_errors`, `dropped_lines`
-  - `packets_filtered`, `packets_emitted`, `frames_emitted`
-  - `callbacks_invoked`, `callback_errors`
-- `log_hook` in `HTSClientConfig` receives `StreamLogEvent` values (`LogEventKind`)
-
-Additional high-level client exceptions:
-- `ClientConfigurationError`
-- `ClientCallbackError`
-
-Core SDK types also include these fields and helpers for further integration:
-- `HandFrame.frame_id` (explicit frame identifier)
-- timestamps for receive/source tracking:
-  - `recv_ts_ns`
-  - `recv_time_unix_ns`
-  - `source_ts_ns`
-- deterministic serialization helpers:
-  - `WristPose.to_dict()` / `from_dict()`
-  - `HandLandmarks.to_dict()` / `from_dict()`
-  - `HandFrame.to_dict()` / `from_dict()`
-
-## Frame Structure
-
-A `HandFrame` includes:
-- `side`: `Left` or `Right`
-- `frame_id`: frame name for downstream systems
-- `wrist`: `WristPose(x, y, z, qx, qy, qz, qw)`
-- `landmarks.points`: tuple of 21 `(x, y, z)` points
-- timing/sequence metadata (`sequence_id`, `recv_ts_ns`, `recv_time_unix_ns`, `source_ts_ns`)
-
-To get telemetry for a specific joint from a frame, use `get_joint(...)`.
-Joint names and order follow the HTS streamed contract (wrist is `JointName.WRIST`).
+## Quick Start
 
 ```python
 from hand_tracking_sdk import HTSClient, HTSClientConfig, JointName, StreamOutput
@@ -282,45 +30,97 @@ client = HTSClient(HTSClientConfig(output=StreamOutput.FRAMES))
 
 for frame in client.iter_events():
     x, y, z = frame.get_joint(JointName.INDEX_TIP)
-    print(
-        f"side={frame.side.value} joint={JointName.INDEX_TIP.value} "
-        f"xyz=({x:.5f}, {y:.5f}, {z:.5f}) recv_ts_ns={frame.recv_ts_ns}"
-    )
+    print(f"{frame.side.value} index tip: ({x:.3f}, {y:.3f}, {z:.3f})")
 ```
 
-You can also query by finger group:
+## Streaming Client
+
+`HTSClient` provides a high-level sync stream with filtering and error policy controls.
+
+- **Transport**: UDP, TCP server, TCP client
+- **Output**: raw packets, assembled frames, or both
+- **Hand filter**: left, right, or both
+- **Error policy**: strict (raise) or tolerant (skip malformed)
+- **Observability**: `get_stats()` counters, `log_hook` for structured events
+
+### Frame Assembly
+
+`HandFrameAssembler` correlates wrist + landmark packets into per-hand `HandFrame`
+objects. Head pose packets produce `HeadFrame` events. Stale out-of-order updates
+are discarded.
+
+A `HandFrame` includes:
+- `side`: Left or Right
+- `wrist`: `WristPose(x, y, z, qx, qy, qz, qw)`
+- `landmarks.points`: 21 MediaPipe-style `(x, y, z)` joints
+- Per-joint access: `frame.get_joint(JointName.INDEX_TIP)`
+- Per-finger access: `frame.get_finger("index")`
+- Timing metadata: `recv_ts_ns`, `source_ts_ns`, `sequence_id`
+
+### Coordinate Conversion
+
+Explicit Unity left-handed to right-handed converters:
 
 ```python
-index_points = frame.get_finger("index")
-# returns dict[JointName, tuple[float, float, float]]
-# keys include JointName.INDEX_PROXIMAL, JointName.INDEX_TIP, ...
+from hand_tracking_sdk.convert import (
+    convert_hand_frame_unity_left_to_right,
+    unity_left_to_rfu_position,          # right-forward-up
+    unity_left_to_rfu_rotation_matrix,
+)
 ```
-
-`frames` mode may also emit `HeadFrame` events with consistent metadata:
-- `side=Head`
-- `frame_id`
-- `head` pose (`x, y, z, qx, qy, qz, qw`)
-- `sequence_id`, `recv_ts_ns`, `recv_time_unix_ns`, `source_ts_ns`, `source_frame_seq`
 
 ## Examples
 
-- Rerun visualization:
-  - install extra: `pip install "hand-tracking-sdk[visualization]"`
-  - `uv run python examples/visualize_rerun.py --transport tcp_server --host 0.0.0.0 --port 8000`
-- Frame-only stream:
-  - `uv run python examples/stream_frames.py --transport tcp_server --host 0.0.0.0 --port 8000`
-  - frame mode emits hand frames and optional `HeadFrame` when head packets are present
-- JSONL logging:
-  - `uv run python examples/log_to_jsonl.py --transport tcp_server --host 0.0.0.0 --port 8000 --output both --path runs/hand_tracking.jsonl`
-  - packets mode now includes `packet_type=head_pose` when present
+### Telemetry
+
+| Script | Description |
+|--------|-------------|
+| `examples/visualize_rerun.py` | Rerun 3D visualization with coordinate frames and jitter metrics |
+| `examples/stream_frames.py` | Print assembled frames to console |
+| `examples/log_to_jsonl.py` | JSONL capture for replay and analysis |
+| `examples/jitter_report.py` | Timing jitter report |
+
+```bash
+uv run python examples/visualize_rerun.py --transport tcp_server --host 0.0.0.0 --port 8000
+```
+
+### Video Host (WebRTC)
+
+Host-side scripts that stream video back to the Quest headset over WebRTC.
+See [`examples/video/README.md`](examples/video/README.md) for details.
+
+| Script | Source | Description |
+|--------|--------|-------------|
+| `test_pattern_video_host.py` | Test pattern | Colour bars — no hardware needed |
+| `webcam_video_host.py` | USB webcam | Streams a local camera feed |
+| `inspire_hand_video_host.py` | MuJoCo | Bimanual Inspire Hand with vector retargeting |
+| `shadow_hand_video_host.py` | MuJoCo | Bimanual Shadow Hand E3M5 with vector retargeting |
+| `aloha_video_host.py` | MuJoCo | ALOHA 2 bimanual arms with IK |
+
+```bash
+# Test pattern — no extra dependencies:
+uv run examples/video/test_pattern_video_host.py
+
+# Shadow Hand bimanual retargeting:
+uv run examples/video/shadow_hand_video_host.py --mocap-tcp-port 5555
+```
+
+### Simulation Teleop
+
+The MuJoCo video hosts close a full teleoperation loop: Quest sends hand + head
+mocap over TCP, Python drives a MuJoCo simulation, and the rendered camera view
+streams back to the headset over WebRTC.
+
+```
+Quest 3/3S ──TCP──► HTSClient ──► MuJoCo pre_step + mj_step + render
+                                                     │
+Quest 3/3S ◄────────────── WebRTC H.264 ◄────────────┘
+```
 
 ## Protocol and Docs
 
-- HTS protocol reference:
-  - [`hand-tracking-streamer/README.md`](https://github.com/wengmister/hand-tracking-streamer/blob/main/README.md)
-  - [`hand-tracking-streamer/CONNECTIONS.md`](https://github.com/wengmister/hand-tracking-streamer/blob/main/CONNECTIONS.md)
-- SDK docs:
-  - https://hand-tracking-sdk.readthedocs.io/
+- HTS protocol: [hand-tracking-streamer README](https://github.com/wengmister/hand-tracking-streamer/blob/main/README.md)
+- SDK API docs: [hand-tracking-sdk.readthedocs.io](https://hand-tracking-sdk.readthedocs.io/)
 
 ## License
 
