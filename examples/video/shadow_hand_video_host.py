@@ -1,11 +1,14 @@
-"""Run Shadow Hand bimanual host with vector retargeting.
+"""Run Shadow Hand E3M5 bimanual video host with vector retargeting.
 
-Maps Quest hand tracking data to two Shadow Hand E3M5 dexterous hands
-using the MujocoVectorRetargeter.  Each hand floats in space via 3 slide
-joints + 1 ball joint, with wrist hinge joints frozen.  Finger retargeting
-uses vector-based optimization; four tendon-coupled actuators per hand
-(FFJ0, MFJ0, RFJ0, LFJ0) are driven by summing the solved middle + distal
-joint positions.
+Maps Quest hand tracking to two Shadow Hand E3M5 dexterous hands using
+``MujocoVectorRetargeter`` for finger pose optimization.  Tendon-coupled
+actuators (FFJ0, MFJ0, RFJ0, LFJ0) are driven by summing the solved
+middle + distal joint positions.
+
+Usage::
+
+    uv run examples/video/shadow_hand_video_host.py --mocap-tcp-port 5555
+    uv run examples/video/shadow_hand_video_host.py --preset 1080p --perf
 """
 
 from __future__ import annotations

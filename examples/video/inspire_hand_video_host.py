@@ -1,9 +1,12 @@
-"""
-Run Inspire bimanual video host with lightweight vector retargeting.
+"""Run Inspire Hand bimanual video host with vector retargeting.
 
-This variant keeps the demo structure from other video hosts, but replaces
-hand-crafted finger curl mapping with vector-based optimization from
-``_retarget.MujocoVectorRetargeter``.
+Maps Quest hand tracking to two Inspire dexterous hands using
+``MujocoVectorRetargeter`` for finger pose optimization.
+
+Usage::
+
+    uv run examples/video/inspire_hand_video_host.py --mocap-tcp-port 5555
+    uv run examples/video/inspire_hand_video_host.py --preset 1080p --perf
 """
 
 from __future__ import annotations

@@ -1,4 +1,10 @@
-"""Run host-side signaling/media service with a USB webcam source."""
+"""Run host-side signaling/media service with a USB webcam source.
+
+Usage::
+
+    uv run examples/video/webcam_video_host.py
+    uv run examples/video/webcam_video_host.py --webcam-index 1 --preset 1080p
+"""
 
 from __future__ import annotations
 

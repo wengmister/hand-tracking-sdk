@@ -1,8 +1,13 @@
-"""Run host-side MuJoCo video service with optional mocap-driven teleop.
+"""Run ALOHA 2 bimanual video host with IK-based teleop.
 
 Uses mink inverse kinematics to map incoming wrist poses to ALOHA joint
 angles.  Gripper control is derived from thumb-to-index pinch distance
-via the SDK teleop module.
+via the SDK teleop module.  Requires ``mink`` and ``daqp``.
+
+Usage::
+
+    uv run examples/video/aloha_video_host.py --mocap-tcp-port 5555
+    uv run examples/video/aloha_video_host.py --preset 1080p --perf
 """
 
 from __future__ import annotations

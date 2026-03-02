@@ -1,4 +1,10 @@
-"""Run host-side signaling/media service with a synthetic test pattern source."""
+"""Run host-side signaling/media service with a synthetic test pattern source.
+
+Usage::
+
+    uv run examples/video/test_pattern_video_host.py
+    uv run examples/video/test_pattern_video_host.py --preset 1080p --verbose
+"""
 
 from __future__ import annotations
 

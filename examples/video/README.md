@@ -1,54 +1,61 @@
-# Video Streaming Examples
+# Video Examples
 
-Host-side examples for streaming video over WebRTC to a Quest client.
+Host-side scripts that receive Quest hand/head tracking data and stream video
+back to the headset over WebRTC.
 
-## Sources
+## Setup
+
+```bash
+pip install hand-tracking-sdk[video]       # WebRTC + signaling
+pip install hand-tracking-sdk[video,sim]   # + MuJoCo sim hosts
+```
+
+## Scripts
 
 | Script | Source | Description |
 |--------|--------|-------------|
-| `aloha_video_host.py` | MuJoCo sim | ALOHA bimanual robot with optional mocap-driven teleop via mink IK |
-| `webcam_video_host.py` | Webcam | Streams a local webcam feed |
-| `test_pattern_video_host.py` | Synthetic | Color-bar test pattern for connectivity debugging |
+| `test_pattern_video_host.py` | Test pattern | Synthetic colour bars — no hardware needed |
+| `webcam_video_host.py` | USB webcam | Streams a local camera feed |
+| `inspire_hand_video_host.py` | MuJoCo | Bimanual Inspire Hand with vector retargeting |
+| `shadow_hand_video_host.py` | MuJoCo | Bimanual Shadow Hand E3M5 with vector retargeting |
+| `aloha_video_host.py` | MuJoCo | ALOHA 2 bimanual arms with IK (requires `mink`) |
 
-## Presets
+## Quick start
 
-All hosts accept a `--preset` flag to configure resolution (FPS is best-effort):
+```bash
+# Simplest — no dependencies beyond the SDK:
+uv run examples/video/test_pattern_video_host.py
 
-| Preset | Resolution |
-|--------|-----------|
-| `480p` | 640 x 480 |
-| `720p` | 1280 x 720 |
-| `1080p` | 1920 x 1080 |
+# MuJoCo hand retargeting (Shadow Hand):
+uv run examples/video/shadow_hand_video_host.py --mocap-tcp-port 5555
 
-## MuJoCo Offscreen Framebuffer
-
-MuJoCo's offscreen renderer has a default framebuffer size of **640 x 480**.
-If the requested preset resolution exceeds this, the renderer will raise an
-error like:
-
-```
-Image width 1280 > framebuffer width 640
-```
-
-To fix this, set `offwidth` and `offheight` in the model XML's `<visual>`
-section to at least the maximum resolution you intend to use:
-
-```xml
-<visual>
-  <global offwidth="1920" offheight="1080"/>
-</visual>
+# Common flags:
+#   --tcp-port 8765         WebSocket signaling port
+#   --mocap-tcp-port 5555   Quest telemetry TCP port
+#   --preset 720p           Video resolution (480p / 720p / 1080p)
+#   --verbose               Enable detailed logging
+#   --perf                  Log per-frame timing (MuJoCo hosts only)
 ```
 
-The bundled ALOHA scene (`assets/aloha/scene.xml`) already sets this to
-1920 x 1080, covering all presets up to 1080p.
+Point the Quest app's signaling URL at `ws://<HOST_IP>:8765`.
 
-## MuJoCo Physics Timing
+## Internal modules
 
-The MuJoCo source adapter synchronizes physics to wall-clock time.  Each
-rendered frame advances the simulation by
-`round(elapsed_wall_time / model.opt.timestep)` physics steps, capped at 2x
-the target frame interval to prevent runaway catch-up after render hiccups.
+| File | Purpose |
+|------|---------|
+| `_common.py` | Shared argument parsing, mocap pump, MuJoCo host runner |
+| `_tracking.py` | Relative head camera and wrist tracking from mocap frames |
+| `_retarget.py` | Lightweight vector-based finger retargeting for MuJoCo |
 
-Frame pacing uses `time.sleep` in the render worker thread, which has sub-ms
-resolution on Python 3.12+ Windows (via high-resolution waitable timers).
-This avoids the ~15.6 ms granularity of `asyncio.sleep` on Windows.
+## Assets
+
+MuJoCo XML models live under `assets/`:
+
+- `assets/shadow_hand/` — Shadow Hand E3M5 (left, right teleop, bimanual scene)
+- `assets/aloha/` — ALOHA 2 bimanual arm scene
+- `assets/inspire/` — Inspire Hand (left, right, bimanual scenes)
+
+Shadow Hand and ALOHA models are borrowed from
+[MuJoCo Menagerie](https://github.com/google-deepmind/mujoco_menagerie)
+and follow their respective [license](https://github.com/google-deepmind/mujoco_menagerie/blob/main/LICENSE).
+Inspire Hand assets are provided by Inspire Robots and slightly modified for simulation purposes.
