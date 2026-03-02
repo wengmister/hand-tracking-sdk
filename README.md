@@ -1,37 +1,69 @@
-# Hand Tracking SDK
+<div align="center">
+  <img width="512" height="362" alt="sdk_logo" src="https://github.com/user-attachments/assets/33cbe2c6-2da9-4868-b5f0-c66e7abc6e3e" />
+  <h3 align="center">
+    Python SDK for consuming telemetry from
+    <a href="https://github.com/wengmister/hand-tracking-streamer">Hand Tracking Streamer (HTS)</a>
+  </h3>
+</div>
+<p align="center">
 
-Python SDK for consuming telemetry from [Hand Tracking Streamer (HTS)](https://github.com/wengmister/hand-tracking-streamer).
+  <a href="https://www.meta.com/experiences/hand-tracking-streamer/26303946202523164/">
+   <img src="https://img.shields.io/badge/VR_app-Meta_Quest_Store-FF5757?labelColor=grey" alt="Horizon Store Release">
+  </a>
 
-## Overview
+  <a href="https://github.com/wengmister/hand-tracking-streamer">
+    <img src="https://img.shields.io/badge/VR_app-GitHub-orange?labelColor=grey" alt="Python SDK">
+  </a>
 
-HTS streams UTF-8 CSV lines for wrist pose, hand landmarks, and head pose from
-Meta Quest headsets. This SDK provides typed parsing, frame assembly, coordinate
-conversion, and high-level streaming — plus WebRTC video hosts for closing a
-full simulation teleop loop.
+  <a href="https://github.com/wengmister/hand-tracking-streamer/blob/main/LICENSE">
+    <img src="https://img.shields.io/badge/license-Apache%20License%202.0-yellow.svg" alt="Apache 2.0">
+  </a>
 
->[!IMPORTANT]
-> Pre-release: This library is under active development. Expect breaking changes.
+  <a href="https://hand-tracking-sdk.readthedocs.io/">
+    <img src="https://img.shields.io/badge/API-ReadTheDocs-green.svg" alt="API Documentation">
+  </a>
+
+
+</p>
+
+**Hand Tracking SDK** is a Python package for consuming HTS hand-tracking telemetry (UDP/TCP), parsing wrist/landmark data into typed frames, and providing conversion, visualization, and integration-ready APIs.
+
+This SDK is hosted on [PyPI](https://pypi.org/project/hand-tracking-sdk/), with API documentation [Here](https://hand-tracking-sdk.readthedocs.io/)
 
 ## Installation
 
 ```bash
-pip install hand-tracking-sdk                      # core SDK
-pip install "hand-tracking-sdk[visualization]"     # + Rerun 3D viewer
-pip install "hand-tracking-sdk[video]"             # + WebRTC video host
-pip install "hand-tracking-sdk[video,sim]"         # + MuJoCo simulation
+pip install hand-tracking-sdk
 ```
 
-## Quick Start
+Optional visualization support with Rerun:
+
+```bash
+pip install "hand-tracking-sdk[visualization]"
+```
+
+## Quickstart
 
 ```python
-from hand_tracking_sdk import HTSClient, HTSClientConfig, JointName, StreamOutput
+from hand_tracking_sdk import HTSClient, HTSClientConfig, StreamOutput
 
-client = HTSClient(HTSClientConfig(output=StreamOutput.FRAMES))
+client = HTSClient(
+    HTSClientConfig(
+        output=StreamOutput.BOTH,  # packets + assembled frames
+    )
+)
 
-for frame in client.iter_events():
-    x, y, z = frame.get_joint(JointName.INDEX_TIP)
-    print(f"{frame.side.value} index tip: ({x:.3f}, {y:.3f}, {z:.3f})")
+for event in client.iter_events():
+    print(event)
 ```
+
+## What HTS Sends
+
+HTS emits UTF-8 CSV lines:
+- wrist packet: 7 floats (`x, y, z, qx, qy, qz, qw`)
+- landmarks packet: 63 floats (`21 x [x, y, z]`)
+
+The SDK validates packet labels, hand side, and exact value counts.
 
 ## Streaming Client
 
@@ -67,6 +99,32 @@ from hand_tracking_sdk.convert import (
     unity_left_to_rfu_position,          # right-forward-up
     unity_left_to_rfu_rotation_matrix,
 )
+```
+
+### Joint & Finger Access
+
+To get telemetry for a specific joint from a frame, use `get_joint(...)`.
+Joint names and order follow the HTS streamed contract (wrist is `JointName.WRIST`).
+
+```python
+from hand_tracking_sdk import HTSClient, HTSClientConfig, JointName, StreamOutput
+
+client = HTSClient(HTSClientConfig(output=StreamOutput.FRAMES))
+
+for frame in client.iter_events():
+    x, y, z = frame.get_joint(JointName.INDEX_TIP)
+    print(
+        f"side={frame.side.value} joint={JointName.INDEX_TIP.value} "
+        f"xyz=({x:.5f}, {y:.5f}, {z:.5f}) recv_ts_ns={frame.recv_ts_ns}"
+    )
+```
+
+You can also query by finger group:
+
+```python
+index_points = frame.get_finger("index")
+# returns dict[JointName, tuple[float, float, float]]
+# keys include JointName.INDEX_PROXIMAL, JointName.INDEX_TIP, ...
 ```
 
 ## Examples
