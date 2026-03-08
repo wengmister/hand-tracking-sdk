@@ -98,7 +98,7 @@ def compensate_gravity(
     for sid in subtree_ids:
         total_mass = model.body_subtreemass[sid]
         mujoco.mj_jacSubtreeCom(model, data, jac, sid)
-        data.qfrc_applied[:] -= model.opt.gravity * total_mass @ jac
+        data.qfrc_applied[:] -= (model.opt.gravity * total_mass) @ jac
 
 
 async def run_video_service(
