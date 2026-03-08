@@ -84,7 +84,7 @@ warn_unused_configs = true
 mypy_path = "src"
 
 [[tool.mypy.overrides]]
-module = ["mujoco", "av", "cv2"]
+module = ["mujoco", "av", "cv2", "numpy", "numpy.*"]
 ignore_missing_imports = true
 
 [tool.hatch.build.targets.wheel]
