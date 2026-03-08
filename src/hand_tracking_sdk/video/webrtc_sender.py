@@ -164,15 +164,15 @@ class VideoWebRTCSender:
         return pc
 
     def _wire_connection_state(self, pc: Any) -> None:
-        @pc.on("connectionstatechange")
+        @pc.on("connectionstatechange")  # type: ignore[untyped-decorator]
         async def _on_state() -> None:
             self._log(f"connection state: {pc.connectionState}")
 
-        @pc.on("iceconnectionstatechange")
+        @pc.on("iceconnectionstatechange")  # type: ignore[untyped-decorator]
         async def _on_ice_state() -> None:
             self._log(f"ICE connection state: {pc.iceConnectionState}")
 
-        @pc.on("icegatheringstatechange")
+        @pc.on("icegatheringstatechange")  # type: ignore[untyped-decorator]
         async def _on_ice_gathering() -> None:
             self._log(f"ICE gathering state: {pc.iceGatheringState}")
 
@@ -186,7 +186,7 @@ class VideoWebRTCSender:
 
         video_stream_track = self._import_aiortc_symbol("VideoStreamTrack")
 
-        class AdapterTrack(video_stream_track):
+        class AdapterTrack(video_stream_track):  # type: ignore[misc, valid-type]
             def __init__(self, adapter: _AdapterVideoTrack, sender: VideoWebRTCSender) -> None:
                 super().__init__()
                 self._adapter = adapter
@@ -215,7 +215,7 @@ class VideoWebRTCSender:
         if self._pc is None or self._on_local_ice_candidate is None:
             return
 
-        @self._pc.on("icecandidate")
+        @self._pc.on("icecandidate")  # type: ignore[untyped-decorator]
         async def _on_icecandidate(candidate: Any) -> None:
             if candidate is None:
                 return
@@ -226,6 +226,7 @@ class VideoWebRTCSender:
                 "sdpMid": getattr(candidate, "sdpMid", None),
                 "sdpMLineIndex": getattr(candidate, "sdpMLineIndex", None),
             }
+            assert self._on_local_ice_candidate is not None
             await self._on_local_ice_candidate(payload)
 
     def _force_h264_codec_if_possible(self) -> None:

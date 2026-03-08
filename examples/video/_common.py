@@ -71,7 +71,8 @@ def start_mocap_pump(
 
     def _pump() -> None:
         for event in client.iter_events():
-            latest[event.side.value] = event
+            if isinstance(event, (HandFrame, HeadFrame)):
+                latest[event.side.value] = event
 
     thread = Thread(target=_pump, daemon=True)
     thread.start()

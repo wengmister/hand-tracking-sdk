@@ -15,6 +15,8 @@ from dataclasses import dataclass, field
 from statistics import median
 
 from hand_tracking_sdk import (
+    HandFrame,
+    HeadFrame,
     HTSClient,
     HTSClientConfig,
     StreamOutput,
@@ -86,7 +88,10 @@ def _main() -> int:
     )
 
     side_state: dict[str, _SideMetrics] = {}
-    for frame in client.iter_events():
+    for event in client.iter_events():
+        if not isinstance(event, (HandFrame, HeadFrame)):
+            continue
+        frame = event
         side = frame.side.value
         state = side_state.setdefault(side, _SideMetrics())
 

@@ -15,9 +15,10 @@ from dataclasses import dataclass
 from typing import Any
 
 import numpy as np
+import numpy.typing as npt
 
 from hand_tracking_sdk.constants import STREAMED_JOINT_NAMES
-from hand_tracking_sdk.convert import basis_transform_rotation_matrix
+from hand_tracking_sdk.convert import Matrix3x3, basis_transform_rotation_matrix
 from hand_tracking_sdk.frame import HandFrame
 from hand_tracking_sdk.models import HandLandmarks, HandSide, JointName, WristPose
 
@@ -75,7 +76,7 @@ class RobotHandSpec:
     tasks: list[VectorTask] | None = None
 
 
-_IDENTITY_BASIS = (
+_IDENTITY_BASIS: Matrix3x3 = (
     (1.0, 0.0, 0.0),
     (0.0, 1.0, 0.0),
     (0.0, 0.0, 1.0),
@@ -99,7 +100,7 @@ class MujocoVectorRetargeter:
         rotation_matrix_transform: (
             Callable[
                 [float, float, float, float],
-                tuple[tuple[float, float, float], ...],
+                Matrix3x3,
             ]
             | None
         ) = None,
@@ -172,8 +173,8 @@ class MujocoVectorRetargeter:
                     f"->{_point_key_name(task.point_b)}"
                 )
 
-        self._joint_qpos: np.ndarray
-        self._joint_dof: np.ndarray
+        self._joint_qpos: npt.NDArray[Any]
+        self._joint_dof: npt.NDArray[Any]
         qpos_ids: list[int] = []
         dof_ids: list[int] = []
         lower: list[float] = []
@@ -199,7 +200,7 @@ class MujocoVectorRetargeter:
         self._lower = np.array(lower, dtype=float)
         self._upper = np.array(upper, dtype=float)
 
-        self._prev_q: np.ndarray | None = None
+        self._prev_q: npt.NDArray[Any] | None = None
         self._global_scale: float | None = None
 
     def reset_reference(self) -> None:
@@ -211,9 +212,9 @@ class MujocoVectorRetargeter:
         self,
         frame: HandFrame,
         *,
-        q_init: np.ndarray | None = None,
-        full_qpos: np.ndarray | None = None,
-    ) -> np.ndarray:
+        q_init: npt.NDArray[Any] | None = None,
+        full_qpos: npt.NDArray[Any] | None = None,
+    ) -> npt.NDArray[Any]:
         """Solve for optimized joint positions for this hand.
 
         Returns a vector aligned with ``joint_names`` passed at construction.
@@ -277,9 +278,9 @@ class MujocoVectorRetargeter:
     def residual_norm(
         self,
         frame: HandFrame,
-        q: np.ndarray,
+        q: npt.NDArray[Any],
         *,
-        full_qpos: np.ndarray | None = None,
+        full_qpos: npt.NDArray[Any] | None = None,
     ) -> float:
         """Compute weighted vector residual norm at a given joint configuration."""
         import mujoco
@@ -297,7 +298,7 @@ class MujocoVectorRetargeter:
         else:
             scale = 1.0 if self._global_scale is None else self._global_scale
 
-        residual_chunks: list[np.ndarray] = []
+        residual_chunks: list[npt.NDArray[Any]] = []
         for task, target in zip(self.tasks, target_vectors, strict=False):
             a_id = self._site_ids[_point_key_name(task.point_a)]
             b_id = self._site_ids[_point_key_name(task.point_b)]
@@ -308,8 +309,8 @@ class MujocoVectorRetargeter:
         residual = np.concatenate(residual_chunks)
         return float(np.linalg.norm(residual))
 
-    def _target_vectors(self, frame: HandFrame) -> list[np.ndarray]:
-        vectors: list[np.ndarray] = []
+    def _target_vectors(self, frame: HandFrame) -> list[npt.NDArray[Any]]:
+        vectors: list[npt.NDArray[Any]] = []
         for task in self.tasks:
             a = self._frame_joint(frame, task.point_a)
             b = self._frame_joint(frame, task.point_b)
@@ -322,7 +323,7 @@ class MujocoVectorRetargeter:
             return self._point_extractor(frame, key)
         return frame.get_joint(key)
 
-    def _frame_joint(self, frame: HandFrame, name: PointKey) -> np.ndarray:
+    def _frame_joint(self, frame: HandFrame, name: PointKey) -> npt.NDArray[Any]:
         p = self._raw_frame_point(frame, name)
         if self.landmarks_wrist_relative:
             # HTS landmarks are wrist-relative vectors. Transform coordinates, then rotate
@@ -342,7 +343,8 @@ class MujocoVectorRetargeter:
                     basis_transform_rotation_matrix(w.qx, w.qy, w.qz, w.qw, _IDENTITY_BASIS),
                     dtype=float,
                 )
-            return wrist_rot @ p_conv
+            result: npt.NDArray[Any] = wrist_rot @ p_conv
+            return result
 
         if self._position_transform is not None:
             return np.array(self._position_transform(p[0], p[1], p[2]), dtype=float)
@@ -350,9 +352,9 @@ class MujocoVectorRetargeter:
 
     def _estimate_scale(
         self,
-        target_vectors: list[np.ndarray],
+        target_vectors: list[npt.NDArray[Any]],
         *,
-        full_qpos: np.ndarray | None,
+        full_qpos: npt.NDArray[Any] | None,
     ) -> float:
         import mujoco
 
@@ -380,13 +382,13 @@ class MujocoVectorRetargeter:
     def _linearized_system(
         self,
         *,
-        target_vectors: list[np.ndarray],
+        target_vectors: list[npt.NDArray[Any]],
         global_scale: float,
-    ) -> tuple[np.ndarray, list[np.ndarray]]:
+    ) -> tuple[npt.NDArray[Any], list[npt.NDArray[Any]]]:
         import mujoco
 
-        residual_chunks: list[np.ndarray] = []
-        jac_rows: list[np.ndarray] = []
+        residual_chunks: list[npt.NDArray[Any]] = []
+        jac_rows: list[npt.NDArray[Any]] = []
 
         jac_pos_a = np.zeros((3, self.model.nv), dtype=float)
         jac_pos_b = np.zeros((3, self.model.nv), dtype=float)
@@ -411,7 +413,7 @@ class MujocoVectorRetargeter:
         return np.concatenate(residual_chunks), jac_rows
 
 
-_INSPIRE_SIDE_SITES: dict[str, dict[JointName, str]] = {
+_INSPIRE_SIDE_SITES: dict[str, dict[PointKey, str]] = {
     "left": {
         JointName.WRIST: "left_palm",
         JointName.THUMB_TIP: "left_thumb_tip",
@@ -494,7 +496,7 @@ def _joint_index_by_name() -> dict[str, int]:
 
 def _build_frame_from_joint_points(
     side: HandSide,
-    points: dict[PointKey, np.ndarray],
+    points: dict[PointKey, npt.NDArray[Any]],
 ) -> HandFrame:
     idx = _joint_index_by_name()
     arr = np.zeros((len(STREAMED_JOINT_NAMES), 3), dtype=float)
@@ -570,7 +572,7 @@ def _run_smoke_test(
     data.qpos[retargeter._joint_qpos] = q_true
     mujoco.mj_forward(model, data)
 
-    joint_points: dict[PointKey, np.ndarray] = {}
+    joint_points: dict[PointKey, npt.NDArray[Any]] = {}
     for jn, sidename in sites.items():
         sid = model.site(sidename).id
         joint_points[jn] = data.site_xpos[sid].copy()

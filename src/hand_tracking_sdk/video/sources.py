@@ -245,6 +245,7 @@ class MujocoSourceAdapter(VideoSourceAdapter):
         if perf:
             t3 = monotonic_ns()
             ns_to_ms = 1e-6
+            assert self._perf_hook is not None
             self._perf_hook({
                 "pre_step_ms": (t1 - t0) * ns_to_ms,
                 "physics_ms": (t2 - t1) * ns_to_ms,

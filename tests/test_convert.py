@@ -23,7 +23,7 @@ from hand_tracking_sdk import (
     unity_left_to_right_quaternion,
     unity_right_to_flu_position,
 )
-from hand_tracking_sdk.convert import _transpose
+from hand_tracking_sdk.convert import Matrix3x3, _transpose
 
 
 def _quat_close(a: tuple[float, float, float, float], b: tuple[float, float, float, float]) -> bool:
@@ -111,7 +111,7 @@ def test_hand_frame_conversion_preserves_metadata() -> None:
 # basis transform tests
 # ---------------------------------------------------------------------------
 
-_IDENTITY: tuple[tuple[float, float, float], ...] = (
+_IDENTITY: Matrix3x3 = (
     (1.0, 0.0, 0.0),
     (0.0, 1.0, 0.0),
     (0.0, 0.0, 1.0),

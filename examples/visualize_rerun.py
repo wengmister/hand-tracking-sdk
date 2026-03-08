@@ -25,6 +25,7 @@ from hand_tracking_sdk import (
     HTSClientConfig,
     RerunVisualizer,
     RerunVisualizerConfig,
+    StreamEvent,
     StreamOutput,
     TransportMode,
 )
@@ -121,7 +122,7 @@ def _main() -> int:
     return 0
 
 
-def _stream_events(events: Iterable[object]) -> Iterable[object]:
+def _stream_events(events: Iterable[StreamEvent]) -> Iterable[StreamEvent]:
     """Yield events unchanged so script remains easy to extend for preprocessing."""
     yield from events
 

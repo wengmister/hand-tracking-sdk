@@ -9,6 +9,7 @@ from __future__ import annotations
 import argparse
 
 from hand_tracking_sdk import (
+    HandFrame,
     HeadFrame,
     HTSClient,
     HTSClientConfig,
@@ -74,6 +75,7 @@ def _main() -> int:
             if max_frames is not None and emitted >= max_frames:
                 break
             continue
+        assert isinstance(frame, HandFrame)
         print(
             "frame"
             f" seq={frame.sequence_id}"

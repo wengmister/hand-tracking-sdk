@@ -1,4 +1,4 @@
-from hand_tracking_sdk import HandFrameAssembler, HandSide
+from hand_tracking_sdk import HandFrame, HandFrameAssembler, HandSide
 
 
 def test_frame_emits_only_when_both_components_present() -> None:
@@ -18,6 +18,7 @@ def test_frame_emits_only_when_both_components_present() -> None:
     )
 
     assert frame is not None
+    assert isinstance(frame, HandFrame)
     assert frame.side == HandSide.RIGHT
     assert frame.frame_id == "hts_right_hand"
     assert frame.sequence_id == 0
@@ -74,6 +75,7 @@ def test_stale_updates_are_ignored() -> None:
         recv_time_unix_ns=130,
     )
     assert fresh is not None
+    assert isinstance(fresh, HandFrame)
     assert fresh.sequence_id == 1
     assert fresh.wrist_recv_ts_ns == 130
 

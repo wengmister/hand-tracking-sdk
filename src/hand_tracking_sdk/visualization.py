@@ -172,7 +172,10 @@ class RerunVisualizer:
             hqx, hqy, hqz, hqw = packet.data.qx, packet.data.qy, packet.data.qz, packet.data.qw
             if self._config.convert_to_right_handed:
                 hx, hy, hz = unity_left_to_right_position(x=hx, y=hy, z=hz)
-                converted = convert_wrist_pose_unity_left_to_right(packet.data)
+                as_wrist = WristPose(x=packet.data.x, y=packet.data.y, z=packet.data.z,
+                                     qx=packet.data.qx, qy=packet.data.qy,
+                                     qz=packet.data.qz, qw=packet.data.qw)
+                converted = convert_wrist_pose_unity_left_to_right(as_wrist)
                 hqx, hqy, hqz, hqw = converted.qx, converted.qy, converted.qz, converted.qw
             self._log_points(
                 "head/pose",
@@ -242,7 +245,10 @@ class RerunVisualizer:
             hqx, hqy, hqz, hqw = event.head.qx, event.head.qy, event.head.qz, event.head.qw
             if self._config.convert_to_right_handed:
                 hx, hy, hz = unity_left_to_right_position(x=hx, y=hy, z=hz)
-                converted = convert_wrist_pose_unity_left_to_right(event.head)
+                as_wrist = WristPose(x=event.head.x, y=event.head.y, z=event.head.z,
+                                     qx=event.head.qx, qy=event.head.qy,
+                                     qz=event.head.qz, qw=event.head.qw)
+                converted = convert_wrist_pose_unity_left_to_right(as_wrist)
                 hqx, hqy, hqz, hqw = converted.qx, converted.qy, converted.qz, converted.qw
             self._log_points(
                 f"frames/{event.frame_id}/head",
