@@ -63,6 +63,7 @@ def _event_to_dict(
     if isinstance(event, HandFrame):
         return {
             "event_type": "frame",
+            "frame_type": "hand",
             "logged_at_unix_ns": time_ns(),
             "data": event.to_dict(),
         }
