@@ -92,12 +92,17 @@ def _build_pre_step(
         import mujoco
         import numpy as np
 
+        # If initialization previously failed, do nothing.
+        if state.get("disabled"):
+            return
+
         # ---- lazy initialization on first call ----
         if not state:
             try:
                 import mink
             except ImportError as exc:
                 print(f"[mujoco-host] mink not available: {exc}")
+                state["disabled"] = True
                 return
 
             # Build joint name lists and resolve IDs.
