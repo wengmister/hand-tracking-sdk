@@ -175,6 +175,5 @@ def test_unity_left_to_flu_rotation_matrix_wrapper_identity() -> None:
 
 
 def test_basis_unity_left_to_flu_constant_matches_position_helper() -> None:
-    assert basis_transform_position((1.0, 2.0, 3.0), BASIS_UNITY_LEFT_TO_FLU) == unity_left_to_flu_position(
-        1.0, 2.0, 3.0
-    )
+    result = basis_transform_position((1.0, 2.0, 3.0), BASIS_UNITY_LEFT_TO_FLU)
+    assert result == unity_left_to_flu_position(1.0, 2.0, 3.0)
