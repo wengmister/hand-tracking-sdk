@@ -1,11 +1,16 @@
 """Parsing helpers for HTS UTF-8 CSV packets."""
 
+import re
+
 from hand_tracking_sdk.constants import LANDMARK_COUNT, LANDMARK_VALUE_COUNT, WRIST_VALUE_COUNT
 from hand_tracking_sdk.exceptions import ParseError
 from hand_tracking_sdk.models import (
     HandLandmarks,
     HandSide,
+    HeadPose,
+    HeadPosePacket,
     LandmarksPacket,
+    PacketDebugInfo,
     PacketType,
     ParsedPacket,
     WristPacket,
@@ -18,7 +23,7 @@ def parse_line(line: str) -> ParsedPacket:
 
     The input line must use one of the supported labels:
     ``Left wrist:``, ``Right wrist:``, ``Left landmarks:``, or
-    ``Right landmarks:``.
+    ``Right landmarks:``, or ``Head pose:``.
 
     :param line:
         Raw UTF-8 decoded line from HTS transport.
@@ -38,13 +43,54 @@ def parse_line(line: str) -> ParsedPacket:
     if not sep:
         raise ParseError("Missing ':' separator.")
 
-    label = head.strip()
+    label, debug_info = _parse_label_and_debug(head.strip())
     payload = _parse_floats(tail)
 
     side, kind = _parse_label(label)
     if kind == PacketType.WRIST:
-        return _parse_wrist(side=side, values=payload)
-    return _parse_landmarks(side=side, values=payload)
+        return _parse_wrist(side=side, values=payload, debug=debug_info)
+    if kind == PacketType.POSE:
+        return _parse_pose(side=side, values=payload, debug=debug_info)
+    return _parse_landmarks(side=side, values=payload, debug=debug_info)
+
+
+def _parse_label_and_debug(label_with_meta: str) -> tuple[str, PacketDebugInfo | None]:
+    """Parse optional debug metadata from the label segment."""
+    parts = [part.strip() for part in label_with_meta.split("|")]
+    if not parts or not parts[0]:
+        raise ParseError("Invalid label.")
+
+    label = parts[0]
+    if len(parts) == 1:
+        return label, None
+
+    source_frame_seq: int | None = None
+    source_ts_ns: int | None = None
+    saw_kv = False
+
+    for raw_part in parts[1:]:
+        if not raw_part:
+            continue
+
+        match = re.match(r"^([A-Za-z]+)\s*=\s*(.+)$", raw_part)
+        if not match:
+            continue
+        saw_kv = True
+        key, value_raw = match.group(1).lower(), match.group(2).strip()
+
+        try:
+            value = int(value_raw)
+        except ValueError as exc:
+            raise ParseError(f"Invalid debug metadata value: {raw_part!r}") from exc
+
+        if key in {"f", "frame", "frame_id"}:
+            source_frame_seq = value
+        elif key in {"t", "ts", "timestamp"}:
+            source_ts_ns = value
+
+    if not saw_kv:
+        return label, None
+    return label, PacketDebugInfo(source_frame_seq=source_frame_seq, source_ts_ns=source_ts_ns)
 
 
 def _parse_label(label: str) -> tuple[HandSide, PacketType]:
@@ -73,6 +119,8 @@ def _parse_label(label: str) -> tuple[HandSide, PacketType]:
         return side, PacketType.WRIST
     if normalized_kind == PacketType.LANDMARKS.value:
         return side, PacketType.LANDMARKS
+    if normalized_kind == PacketType.POSE.value:
+        return side, PacketType.POSE
     raise ParseError(f"Unsupported packet type: {kind_raw!r}")
 
 
@@ -93,7 +141,11 @@ def _parse_floats(payload: str) -> list[float]:
         raise ParseError("Payload contains non-float values.") from exc
 
 
-def _parse_wrist(side: HandSide, values: list[float]) -> WristPacket:
+def _parse_wrist(
+    side: HandSide,
+    values: list[float],
+    debug: PacketDebugInfo | None,
+) -> WristPacket:
     """Validate and map wrist values into a typed packet.
 
     :param side:
@@ -109,10 +161,27 @@ def _parse_wrist(side: HandSide, values: list[float]) -> WristPacket:
         raise ParseError(f"Wrist packet must contain {WRIST_VALUE_COUNT} values, got {len(values)}")
 
     pose = WristPose(*values)
-    return WristPacket(side=side, kind=PacketType.WRIST, data=pose)
+    return WristPacket(side=side, kind=PacketType.WRIST, data=pose, debug=debug)
 
 
-def _parse_landmarks(side: HandSide, values: list[float]) -> LandmarksPacket:
+def _parse_pose(
+    side: HandSide,
+    values: list[float],
+    debug: PacketDebugInfo | None,
+) -> HeadPosePacket:
+    """Validate and map head pose values into a typed packet."""
+    if len(values) != WRIST_VALUE_COUNT:
+        raise ParseError(f"Pose packet must contain {WRIST_VALUE_COUNT} values, got {len(values)}")
+
+    pose = HeadPose(*values)
+    return HeadPosePacket(side=side, kind=PacketType.POSE, data=pose, debug=debug)
+
+
+def _parse_landmarks(
+    side: HandSide,
+    values: list[float],
+    debug: PacketDebugInfo | None,
+) -> LandmarksPacket:
     """Validate and map landmark values into a typed packet.
 
     :param side:
@@ -132,4 +201,9 @@ def _parse_landmarks(side: HandSide, values: list[float]) -> LandmarksPacket:
     points = tuple(
         (values[i], values[i + 1], values[i + 2]) for i in range(0, LANDMARK_COUNT * 3, 3)
     )
-    return LandmarksPacket(side=side, kind=PacketType.LANDMARKS, data=HandLandmarks(points=points))
+    return LandmarksPacket(
+        side=side,
+        kind=PacketType.LANDMARKS,
+        data=HandLandmarks(points=points),
+        debug=debug,
+    )

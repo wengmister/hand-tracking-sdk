@@ -2,7 +2,7 @@
 
 Example:
     uv run python examples/log_to_jsonl.py --transport tcp_server \\
-        --host 0.0.0.0 --port 8000 --output both --path runs/hts.jsonl
+        --host 0.0.0.0 --port 8000 --output frames --path logs/hts.jsonl
 """
 
 from __future__ import annotations
@@ -15,6 +15,8 @@ from typing import Any
 
 from hand_tracking_sdk import (
     HandFrame,
+    HeadFrame,
+    HeadPosePacket,
     HTSClient,
     HTSClientConfig,
     LandmarksPacket,
@@ -55,10 +57,20 @@ def _parse_args() -> argparse.Namespace:
     return parser.parse_args()
 
 
-def _event_to_dict(event: HandFrame | WristPacket | LandmarksPacket) -> dict[str, Any]:
+def _event_to_dict(
+    event: HandFrame | HeadFrame | WristPacket | LandmarksPacket | HeadPosePacket,
+) -> dict[str, Any]:
     if isinstance(event, HandFrame):
         return {
             "event_type": "frame",
+            "frame_type": "hand",
+            "logged_at_unix_ns": time_ns(),
+            "data": event.to_dict(),
+        }
+    if isinstance(event, HeadFrame):
+        return {
+            "event_type": "frame",
+            "frame_type": "head",
             "logged_at_unix_ns": time_ns(),
             "data": event.to_dict(),
         }
@@ -68,6 +80,30 @@ def _event_to_dict(event: HandFrame | WristPacket | LandmarksPacket) -> dict[str
             "packet_type": "wrist",
             "side": event.side.value,
             "logged_at_unix_ns": time_ns(),
+            "debug": (
+                None
+                if event.debug is None
+                else {
+                    "source_frame_seq": event.debug.source_frame_seq,
+                    "source_ts_ns": event.debug.source_ts_ns,
+                }
+            ),
+            "data": event.data.to_dict(),
+        }
+    if isinstance(event, HeadPosePacket):
+        return {
+            "event_type": "packet",
+            "packet_type": "head_pose",
+            "side": event.side.value,
+            "logged_at_unix_ns": time_ns(),
+            "debug": (
+                None
+                if event.debug is None
+                else {
+                    "source_frame_seq": event.debug.source_frame_seq,
+                    "source_ts_ns": event.debug.source_ts_ns,
+                }
+            ),
             "data": event.data.to_dict(),
         }
     return {
@@ -75,6 +111,14 @@ def _event_to_dict(event: HandFrame | WristPacket | LandmarksPacket) -> dict[str
         "packet_type": "landmarks",
         "side": event.side.value,
         "logged_at_unix_ns": time_ns(),
+        "debug": (
+            None
+            if event.debug is None
+            else {
+                "source_frame_seq": event.debug.source_frame_seq,
+                "source_ts_ns": event.debug.source_ts_ns,
+            }
+        ),
         "data": event.data.to_dict(),
     }
 
@@ -96,15 +140,21 @@ def _main() -> int:
     )
 
     written = 0
+    interrupted = False
     with path.open("w", encoding="utf-8") as handle:
-        for event in client.iter_events():
-            payload = _event_to_dict(event)
-            handle.write(json.dumps(payload, separators=(",", ":")) + "\n")
-            written += 1
-            if max_events is not None and written >= max_events:
-                break
+        try:
+            for event in client.iter_events():
+                payload = _event_to_dict(event)
+                handle.write(json.dumps(payload, separators=(",", ":")) + "\n")
+                written += 1
+                if max_events is not None and written >= max_events:
+                    break
+        except KeyboardInterrupt:
+            interrupted = True
 
     stats = client.get_stats()
+    if interrupted:
+        print("stopped (keyboard interrupt)")
     print(
         f"wrote {written} event(s) to {path}"
         f" frames_emitted={stats.frames_emitted}"

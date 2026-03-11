@@ -11,6 +11,8 @@ from hand_tracking_sdk.models import (
     FingerName,
     HandLandmarks,
     HandSide,
+    HeadPose,
+    HeadPosePacket,
     JointName,
     LandmarksPacket,
     ParsedPacket,
@@ -40,6 +42,8 @@ class HandFrame:
         Optional wall-clock timestamp in Unix nanoseconds.
     :param source_ts_ns:
         Optional source timestamp supplied by upstream sender.
+    :param source_frame_seq:
+        Optional upstream source frame sequence identifier.
     :param wrist_recv_ts_ns:
         Receive timestamp of the wrist payload included in this frame.
     :param landmarks_recv_ts_ns:
@@ -56,6 +60,7 @@ class HandFrame:
     source_ts_ns: int | None
     wrist_recv_ts_ns: int
     landmarks_recv_ts_ns: int
+    source_frame_seq: int | None = None
 
     def get_joint(self, joint: JointName | str) -> tuple[float, float, float]:
         """Return one landmark point by joint name.
@@ -97,6 +102,7 @@ class HandFrame:
             "recv_ts_ns": self.recv_ts_ns,
             "recv_time_unix_ns": self.recv_time_unix_ns,
             "source_ts_ns": self.source_ts_ns,
+            "source_frame_seq": self.source_frame_seq,
             "wrist_recv_ts_ns": self.wrist_recv_ts_ns,
             "landmarks_recv_ts_ns": self.landmarks_recv_ts_ns,
         }
@@ -121,8 +127,78 @@ class HandFrame:
                 None if values["recv_time_unix_ns"] is None else int(values["recv_time_unix_ns"])
             ),
             source_ts_ns=(None if values["source_ts_ns"] is None else int(values["source_ts_ns"])),
+            source_frame_seq=(
+                None
+                if values.get("source_frame_seq") is None
+                else int(values["source_frame_seq"])
+            ),
             wrist_recv_ts_ns=int(values["wrist_recv_ts_ns"]),
             landmarks_recv_ts_ns=int(values["landmarks_recv_ts_ns"]),
+        )
+
+
+@dataclass(frozen=True, slots=True)
+class HeadFrame:
+    """Frame-like head pose event with normalized metadata fields.
+
+    :param side:
+        Always ``HandSide.HEAD``.
+    :param frame_id:
+        Frame identifier for downstream middleware mapping.
+    :param head:
+        Head pose payload.
+    :param sequence_id:
+        Monotonic sequence number for head frames.
+    :param recv_ts_ns:
+        Monotonic receive timestamp for the emitted frame.
+    :param recv_time_unix_ns:
+        Optional wall-clock timestamp in Unix nanoseconds.
+    :param source_ts_ns:
+        Optional source timestamp supplied by upstream sender.
+    :param source_frame_seq:
+        Optional upstream source frame sequence identifier.
+    """
+
+    side: HandSide
+    frame_id: str
+    head: HeadPose
+    sequence_id: int
+    recv_ts_ns: int
+    recv_time_unix_ns: int | None
+    source_ts_ns: int | None
+    source_frame_seq: int | None = None
+
+    def to_dict(self) -> dict[str, Any]:
+        """Serialize frame into a deterministic mapping-friendly dictionary."""
+        return {
+            "side": self.side.value,
+            "frame_id": self.frame_id,
+            "head": self.head.to_dict(),
+            "sequence_id": self.sequence_id,
+            "recv_ts_ns": self.recv_ts_ns,
+            "recv_time_unix_ns": self.recv_time_unix_ns,
+            "source_ts_ns": self.source_ts_ns,
+            "source_frame_seq": self.source_frame_seq,
+        }
+
+    @classmethod
+    def from_dict(cls, values: Mapping[str, Any]) -> HeadFrame:
+        """Build :class:`HeadFrame` from serialized mapping data."""
+        return cls(
+            side=HandSide(str(values["side"])),
+            frame_id=str(values["frame_id"]),
+            head=HeadPose.from_dict(values["head"]),
+            sequence_id=int(values["sequence_id"]),
+            recv_ts_ns=int(values["recv_ts_ns"]),
+            recv_time_unix_ns=(
+                None if values["recv_time_unix_ns"] is None else int(values["recv_time_unix_ns"])
+            ),
+            source_ts_ns=(None if values["source_ts_ns"] is None else int(values["source_ts_ns"])),
+            source_frame_seq=(
+                None
+                if values.get("source_frame_seq") is None
+                else int(values["source_frame_seq"])
+            ),
         )
 
 
@@ -134,9 +210,29 @@ class _SideAssemblyState:
     wrist_recv_ts_ns: int | None = None
     landmarks: HandLandmarks | None = None
     landmarks_recv_ts_ns: int | None = None
+    wrist_source_ts_ns: int | None = None
+    landmarks_source_ts_ns: int | None = None
+    wrist_source_frame_seq: int | None = None
+    landmarks_source_frame_seq: int | None = None
     last_emitted_wrist_recv_ts_ns: int | None = None
     last_emitted_landmarks_recv_ts_ns: int | None = None
     next_sequence_id: int = 0
+
+
+@dataclass(slots=True)
+class _HeadAssemblyState:
+    """Mutable head assembly state for optional `HeadFrame` emission."""
+
+    head: HeadPose | None = None
+    head_recv_ts_ns: int | None = None
+    head_source_ts_ns: int | None = None
+    head_source_frame_seq: int | None = None
+    last_emitted_head_recv_ts_ns: int | None = None
+    next_sequence_id: int = 0
+
+
+AssembledFrame = HandFrame | HeadFrame
+"""Frame event emitted by :class:`HandFrameAssembler`."""
 
 
 class HandFrameAssembler:
@@ -152,6 +248,7 @@ class HandFrameAssembler:
         self,
         *,
         include_wall_time: bool = True,
+        include_head_frames: bool = False,
         frame_id_by_side: Mapping[HandSide, str] | None = None,
     ) -> None:
         """Create a frame assembler.
@@ -159,13 +256,17 @@ class HandFrameAssembler:
         :param include_wall_time:
             If ``True``, :class:`HandFrame` includes ``recv_time_unix_ns`` using
             ``time.time_ns()`` when caller does not provide one.
+        :param include_head_frames:
+            If ``True``, emit :class:`HeadFrame` events for ``Head pose`` packets.
         :param frame_id_by_side:
             Optional per-side frame identifiers used in emitted frames.
         """
         self._include_wall_time = include_wall_time
+        self._include_head_frames = include_head_frames
         self._frame_id_by_side = {
             HandSide.LEFT: "hts_left_hand",
             HandSide.RIGHT: "hts_right_hand",
+            HandSide.HEAD: "hts_head",
         }
         if frame_id_by_side is not None:
             self._frame_id_by_side.update(frame_id_by_side)
@@ -173,6 +274,7 @@ class HandFrameAssembler:
             HandSide.LEFT: _SideAssemblyState(),
             HandSide.RIGHT: _SideAssemblyState(),
         }
+        self._head_state = _HeadAssemblyState()
 
     def reset(self, side: HandSide | None = None) -> None:
         """Reset assembler state.
@@ -183,8 +285,12 @@ class HandFrameAssembler:
         if side is None:
             self._state[HandSide.LEFT] = _SideAssemblyState()
             self._state[HandSide.RIGHT] = _SideAssemblyState()
+            self._head_state = _HeadAssemblyState()
             return
 
+        if side == HandSide.HEAD:
+            self._head_state = _HeadAssemblyState()
+            return
         self._state[side] = _SideAssemblyState()
 
     def push_packet(
@@ -194,7 +300,7 @@ class HandFrameAssembler:
         recv_ts_ns: int | None = None,
         recv_time_unix_ns: int | None = None,
         source_ts_ns: int | None = None,
-    ) -> HandFrame | None:
+    ) -> AssembledFrame | None:
         """Push one parsed packet and optionally emit a coherent frame.
 
         :param packet:
@@ -215,6 +321,16 @@ class HandFrameAssembler:
             recv_time_unix_ns=recv_time_unix_ns,
         )
 
+        if isinstance(packet, HeadPosePacket):
+            if not self._include_head_frames:
+                return None
+            return self._emit_head_frame(
+                packet=packet,
+                recv_ts_ns=recv_ts_ns_value,
+                recv_time_unix_ns=recv_time_unix_ns_value,
+                source_ts_ns=source_ts_ns,
+            )
+
         side_state = self._state[packet.side]
         if isinstance(packet, WristPacket):
             if (
@@ -224,6 +340,12 @@ class HandFrameAssembler:
                 return None
             side_state.wrist = packet.data
             side_state.wrist_recv_ts_ns = recv_ts_ns_value
+            side_state.wrist_source_ts_ns = (
+                packet.debug.source_ts_ns if packet.debug is not None else None
+            )
+            side_state.wrist_source_frame_seq = (
+                packet.debug.source_frame_seq if packet.debug is not None else None
+            )
         elif isinstance(packet, LandmarksPacket):
             if (
                 side_state.landmarks_recv_ts_ns is not None
@@ -232,6 +354,12 @@ class HandFrameAssembler:
                 return None
             side_state.landmarks = packet.data
             side_state.landmarks_recv_ts_ns = recv_ts_ns_value
+            side_state.landmarks_source_ts_ns = (
+                packet.debug.source_ts_ns if packet.debug is not None else None
+            )
+            side_state.landmarks_source_frame_seq = (
+                packet.debug.source_frame_seq if packet.debug is not None else None
+            )
 
         return self._maybe_emit_frame(
             side=packet.side,
@@ -246,7 +374,7 @@ class HandFrameAssembler:
         recv_ts_ns: int | None = None,
         recv_time_unix_ns: int | None = None,
         source_ts_ns: int | None = None,
-    ) -> HandFrame | None:
+    ) -> AssembledFrame | None:
         """Parse and push one raw HTS line into assembler state.
 
         :param line:
@@ -266,6 +394,54 @@ class HandFrameAssembler:
             recv_ts_ns=recv_ts_ns,
             recv_time_unix_ns=recv_time_unix_ns,
             source_ts_ns=source_ts_ns,
+        )
+
+    def _emit_head_frame(
+        self,
+        *,
+        packet: HeadPosePacket,
+        recv_ts_ns: int,
+        recv_time_unix_ns: int | None,
+        source_ts_ns: int | None,
+    ) -> HeadFrame | None:
+        """Emit a `HeadFrame` if head state has advanced."""
+        if (
+            self._head_state.head_recv_ts_ns is not None
+            and recv_ts_ns < self._head_state.head_recv_ts_ns
+        ):
+            return None
+
+        self._head_state.head = packet.data
+        self._head_state.head_recv_ts_ns = recv_ts_ns
+        self._head_state.head_source_ts_ns = (
+            packet.debug.source_ts_ns if packet.debug is not None else None
+        )
+        self._head_state.head_source_frame_seq = (
+            packet.debug.source_frame_seq if packet.debug is not None else None
+        )
+        if self._head_state.last_emitted_head_recv_ts_ns == self._head_state.head_recv_ts_ns:
+            return None
+
+        sequence_id = self._head_state.next_sequence_id
+        self._head_state.next_sequence_id += 1
+        self._head_state.last_emitted_head_recv_ts_ns = self._head_state.head_recv_ts_ns
+
+        resolved_source_ts_ns = source_ts_ns
+        if resolved_source_ts_ns is None:
+            resolved_source_ts_ns = self._head_state.head_source_ts_ns
+
+        if self._head_state.head is None or self._head_state.head_recv_ts_ns is None:
+            return None
+
+        return HeadFrame(
+            side=HandSide.HEAD,
+            frame_id=self._frame_id_by_side[HandSide.HEAD],
+            head=self._head_state.head,
+            sequence_id=sequence_id,
+            recv_ts_ns=self._head_state.head_recv_ts_ns,
+            recv_time_unix_ns=recv_time_unix_ns,
+            source_ts_ns=resolved_source_ts_ns,
+            source_frame_seq=self._head_state.head_source_frame_seq,
         )
 
     def _resolve_timestamps(
@@ -331,6 +507,27 @@ class HandFrameAssembler:
         side_state.last_emitted_wrist_recv_ts_ns = side_state.wrist_recv_ts_ns
         side_state.last_emitted_landmarks_recv_ts_ns = side_state.landmarks_recv_ts_ns
 
+        resolved_source_ts_ns = source_ts_ns
+        if resolved_source_ts_ns is None:
+            source_ts_candidates = [
+                ts
+                for ts in (side_state.wrist_source_ts_ns, side_state.landmarks_source_ts_ns)
+                if ts is not None
+            ]
+            resolved_source_ts_ns = max(source_ts_candidates) if source_ts_candidates else None
+
+        source_frame_seq_candidates = [
+            seq
+            for seq in (
+                side_state.wrist_source_frame_seq,
+                side_state.landmarks_source_frame_seq,
+            )
+            if seq is not None
+        ]
+        resolved_source_frame_seq = (
+            max(source_frame_seq_candidates) if source_frame_seq_candidates else None
+        )
+
         return HandFrame(
             side=side,
             frame_id=self._frame_id_by_side[side],
@@ -339,7 +536,8 @@ class HandFrameAssembler:
             sequence_id=sequence_id,
             recv_ts_ns=max(side_state.wrist_recv_ts_ns, side_state.landmarks_recv_ts_ns),
             recv_time_unix_ns=recv_time_unix_ns,
-            source_ts_ns=source_ts_ns,
+            source_ts_ns=resolved_source_ts_ns,
+            source_frame_seq=resolved_source_frame_seq,
             wrist_recv_ts_ns=side_state.wrist_recv_ts_ns,
             landmarks_recv_ts_ns=side_state.landmarks_recv_ts_ns,
         )

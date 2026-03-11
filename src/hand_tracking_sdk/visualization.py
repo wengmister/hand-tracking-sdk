@@ -3,7 +3,8 @@
 from __future__ import annotations
 
 import importlib
-from dataclasses import dataclass
+from collections import deque
+from dataclasses import dataclass, field
 from types import ModuleType
 from typing import cast
 
@@ -12,10 +13,18 @@ from hand_tracking_sdk.convert import (
     convert_hand_frame_unity_left_to_right,
     convert_landmarks_unity_left_to_right,
     convert_wrist_pose_unity_left_to_right,
+    unity_left_to_right_position,
     unity_right_to_flu_position,
 )
-from hand_tracking_sdk.frame import HandFrame
-from hand_tracking_sdk.models import HandSide, LandmarksPacket, ParsedPacket, WristPacket, WristPose
+from hand_tracking_sdk.frame import HandFrame, HeadFrame
+from hand_tracking_sdk.models import (
+    HandSide,
+    HeadPosePacket,
+    LandmarksPacket,
+    ParsedPacket,
+    WristPacket,
+    WristPose,
+)
 
 from .exceptions import VisualizationDependencyError
 
@@ -56,6 +65,14 @@ class RerunVisualizerConfig:
     :param visualization_frame:
         Point frame convention for visualization output.
         ``flu`` means ``x=forward, y=left, z=up``.
+    :param show_jitter_panel:
+        If ``True``, log jitter/drop scalar metrics under ``metrics/jitter/...``.
+    :param jitter_window_size:
+        Rolling window size for jitter percentile metrics.
+    :param show_coordinate_frames:
+        If ``True``, render local XYZ axes for wrist/head poses.
+    :param coordinate_frame_axis_length:
+        Axis length in meters for rendered coordinate frames.
     """
 
     application_id: str = "hand-tracking-sdk"
@@ -69,6 +86,18 @@ class RerunVisualizerConfig:
     convert_to_right_handed: bool = True
     background_color: tuple[int, int, int] | None = (18, 22, 30)
     visualization_frame: VisualizationFrame = VisualizationFrame.FLU
+    show_jitter_panel: bool = False
+    jitter_window_size: int = 200
+    show_coordinate_frames: bool = False
+    coordinate_frame_axis_length: float = 0.08
+
+
+@dataclass(slots=True)
+class _JitterSideState:
+    prev_recv_ts_ns: int | None = None
+    prev_source_ts_ns: int | None = None
+    prev_source_frame_seq: int | None = None
+    jitter_ns_window: deque[int] = field(default_factory=deque)
 
 
 class RerunVisualizer:
@@ -88,6 +117,10 @@ class RerunVisualizer:
         self._config = config or RerunVisualizerConfig()
         self._rr = self._import_rerun()
         self._latest_wrist_by_side: dict[HandSide, WristPose] = {}
+        self._jitter_state_by_side: dict[HandSide, _JitterSideState] = {
+            HandSide.LEFT: _JitterSideState(),
+            HandSide.RIGHT: _JitterSideState(),
+        }
         self._rr.init(self._config.application_id, spawn=self._config.spawn)
         self._apply_view_background()
 
@@ -109,6 +142,12 @@ class RerunVisualizer:
                 radius=self._config.wrist_radius,
                 color=self._config.wrist_color,
             )
+            if self._config.show_coordinate_frames:
+                self._log_pose_axes(
+                    f"{side_path}/frame_axes",
+                    position=(pose.x, pose.y, pose.z),
+                    quaternion=(pose.qx, pose.qy, pose.qz, pose.qw),
+                )
             return
 
         if isinstance(packet, LandmarksPacket):
@@ -126,6 +165,30 @@ class RerunVisualizer:
                 radius=self._config.landmark_radius,
                 color=self._landmark_color(packet.side),
             )
+            return
+
+        if isinstance(packet, HeadPosePacket):
+            hx, hy, hz = packet.data.x, packet.data.y, packet.data.z
+            hqx, hqy, hqz, hqw = packet.data.qx, packet.data.qy, packet.data.qz, packet.data.qw
+            if self._config.convert_to_right_handed:
+                hx, hy, hz = unity_left_to_right_position(x=hx, y=hy, z=hz)
+                as_wrist = WristPose(x=packet.data.x, y=packet.data.y, z=packet.data.z,
+                                     qx=packet.data.qx, qy=packet.data.qy,
+                                     qz=packet.data.qz, qw=packet.data.qw)
+                converted = convert_wrist_pose_unity_left_to_right(as_wrist)
+                hqx, hqy, hqz, hqw = converted.qx, converted.qy, converted.qz, converted.qw
+            self._log_points(
+                "head/pose",
+                [(hx, hy, hz)],
+                radius=self._config.wrist_radius,
+                color=self._config.wrist_color,
+            )
+            if self._config.show_coordinate_frames:
+                self._log_pose_axes(
+                    "head/frame_axes",
+                    position=(hx, hy, hz),
+                    quaternion=(hqx, hqy, hqz, hqw),
+                )
 
     def log_frame(self, frame: HandFrame) -> None:
         """Log one assembled frame to Rerun.
@@ -145,6 +208,17 @@ class RerunVisualizer:
             radius=self._config.wrist_radius,
             color=self._config.wrist_color,
         )
+        if self._config.show_coordinate_frames:
+            self._log_pose_axes(
+                f"{base}/frame_axes",
+                position=(visual_frame.wrist.x, visual_frame.wrist.y, visual_frame.wrist.z),
+                quaternion=(
+                    visual_frame.wrist.qx,
+                    visual_frame.wrist.qy,
+                    visual_frame.wrist.qz,
+                    visual_frame.wrist.qw,
+                ),
+            )
         points = visual_frame.landmarks.points
         if self._config.landmarks_are_wrist_relative:
             points = self._transform_landmarks_by_wrist(points=points, wrist=visual_frame.wrist)
@@ -154,8 +228,10 @@ class RerunVisualizer:
             radius=self._config.landmark_radius,
             color=self._landmark_color(visual_frame.side),
         )
+        if self._config.show_jitter_panel:
+            self._log_jitter_metrics(visual_frame)
 
-    def log_event(self, event: ParsedPacket | HandFrame) -> None:
+    def log_event(self, event: ParsedPacket | HandFrame | HeadFrame) -> None:
         """Log either packet or frame event.
 
         :param event:
@@ -164,7 +240,124 @@ class RerunVisualizer:
         if isinstance(event, HandFrame):
             self.log_frame(event)
             return
+        if isinstance(event, HeadFrame):
+            hx, hy, hz = event.head.x, event.head.y, event.head.z
+            hqx, hqy, hqz, hqw = event.head.qx, event.head.qy, event.head.qz, event.head.qw
+            if self._config.convert_to_right_handed:
+                hx, hy, hz = unity_left_to_right_position(x=hx, y=hy, z=hz)
+                as_wrist = WristPose(x=event.head.x, y=event.head.y, z=event.head.z,
+                                     qx=event.head.qx, qy=event.head.qy,
+                                     qz=event.head.qz, qw=event.head.qw)
+                converted = convert_wrist_pose_unity_left_to_right(as_wrist)
+                hqx, hqy, hqz, hqw = converted.qx, converted.qy, converted.qz, converted.qw
+            self._log_points(
+                f"frames/{event.frame_id}/head",
+                [(hx, hy, hz)],
+                radius=self._config.wrist_radius,
+                color=self._config.wrist_color,
+            )
+            if self._config.show_coordinate_frames:
+                self._log_pose_axes(
+                    f"frames/{event.frame_id}/frame_axes",
+                    position=(hx, hy, hz),
+                    quaternion=(hqx, hqy, hqz, hqw),
+                )
+            return
         self.log_packet(event)
+
+    def _log_pose_axes(
+        self,
+        path: str,
+        *,
+        position: tuple[float, float, float],
+        quaternion: tuple[float, float, float, float],
+    ) -> None:
+        """Log XYZ axes for one pose with SDK-version compatibility.
+
+        :param path:
+            Entity path for axis geometry.
+        :param position:
+            Pose origin in SDK frame convention.
+        :param quaternion:
+            Pose orientation as ``(qx, qy, qz, qw)``.
+        """
+        px, py, pz = position
+        qx, qy, qz, qw = quaternion
+        axis_len = self._config.coordinate_frame_axis_length
+        local_axes = self._coordinate_axes_for_visualization(axis_len=axis_len)
+        axis_colors = ([255, 0, 0], [0, 255, 0], [0, 128, 255])
+        origin = self._map_point_frame(x=px, y=py, z=pz)
+
+        segments: list[list[list[float]]] = []
+        for ax, ay, az in local_axes:
+            rx, ry, rz = _rotate_vector_by_quaternion(
+                x=ax,
+                y=ay,
+                z=az,
+                qx=qx,
+                qy=qy,
+                qz=qz,
+                qw=qw,
+            )
+            endpoint = self._map_point_frame(x=px + rx, y=py + ry, z=pz + rz)
+            segments.append(
+                [
+                    [origin[0], origin[1], origin[2]],
+                    [endpoint[0], endpoint[1], endpoint[2]],
+                ]
+            )
+
+        if hasattr(self._rr, "LineStrips3D"):
+            try:
+                self._rr.log(
+                    path,
+                    self._rr.LineStrips3D(
+                        segments,
+                        colors=axis_colors,
+                    ),
+                )
+                return
+            except Exception:
+                pass
+
+        fallback_points = [point for segment in segments for point in segment]
+        fallback_colors = [
+            axis_colors[0],
+            axis_colors[0],
+            axis_colors[1],
+            axis_colors[1],
+            axis_colors[2],
+            axis_colors[2],
+        ]
+        self._rr.log(
+            path,
+            self._rr.Points3D(
+                fallback_points,
+                radii=[self._config.landmark_radius] * len(fallback_points),
+                colors=fallback_colors,
+            ),
+        )
+
+    def _coordinate_axes_for_visualization(
+        self, *, axis_len: float
+    ) -> tuple[tuple[float, float, float], tuple[float, float, float], tuple[float, float, float]]:
+        """Return local axis vectors so displayed axes match configured view basis.
+
+        In FLU mode, colors remain RGB while semantic directions become:
+        red=+X(forward), green=+Y(left), blue=+Z(up).
+        """
+        if self._config.visualization_frame == VisualizationFrame.FLU:
+            # Source (Unity-right) vectors that map to FLU +X/+Y/+Z after _map_point_frame.
+            return (
+                (0.0, 0.0, axis_len),   # FLU +X (forward)
+                (-axis_len, 0.0, 0.0),  # FLU +Y (left)
+                (0.0, -axis_len, 0.0),  # FLU +Z (up)
+            )
+        return (
+            (axis_len, 0.0, 0.0),
+            (0.0, axis_len, 0.0),
+            (0.0, 0.0, axis_len),
+        )
 
     def _log_points(
         self,
@@ -235,15 +428,30 @@ class RerunVisualizer:
                 eye_up=[0.0, 0.0, 1.0],
             )
 
-        blueprint = blueprint_module.Blueprint(
-            blueprint_module.Spatial3DView(
-                origin="/",
-                name="3D Scene",
-                background=list(self._config.background_color),
-                eye_controls=eye_controls,
-            )
+        spatial_view = blueprint_module.Spatial3DView(
+            origin="/",
+            name="3D Scene",
+            background=list(self._config.background_color),
+            eye_controls=eye_controls,
         )
-        self._rr.send_blueprint(blueprint)
+
+        if not self._config.show_jitter_panel or not hasattr(blueprint_module, "TimeSeriesView"):
+            self._rr.send_blueprint(blueprint_module.Blueprint(spatial_view))
+            return
+
+        try:
+            jitter_view = blueprint_module.TimeSeriesView(
+                origin="/metrics/jitter",
+                name="Jitter",
+            )
+            if hasattr(blueprint_module, "Horizontal"):
+                layout = blueprint_module.Horizontal(spatial_view, jitter_view)
+            else:
+                layout = [spatial_view, jitter_view]
+            self._rr.send_blueprint(blueprint_module.Blueprint(layout))
+        except Exception:
+            # Fall back to plain 3D blueprint if viewer API shape differs by rerun version.
+            self._rr.send_blueprint(blueprint_module.Blueprint(spatial_view))
 
     def _landmark_color(self, side: HandSide) -> tuple[int, int, int]:
         """Return the configured landmark color for a hand side.
@@ -302,6 +510,59 @@ class RerunVisualizer:
             )
             transformed.append((rx + wrist.x, ry + wrist.y, rz + wrist.z))
         return tuple(transformed)
+
+    def _log_jitter_metrics(self, frame: HandFrame) -> None:
+        """Log per-side jitter and drop metrics as scalar timeseries."""
+        if frame.source_ts_ns is None:
+            return
+
+        side = frame.side
+        state = self._jitter_state_by_side[side]
+        base = f"metrics/jitter/{side.value.lower()}"
+
+        if state.prev_recv_ts_ns is not None and state.prev_source_ts_ns is not None:
+            source_dt_ns = frame.source_ts_ns - state.prev_source_ts_ns
+            recv_dt_ns = frame.recv_ts_ns - state.prev_recv_ts_ns
+            jitter_ns = recv_dt_ns - source_dt_ns
+
+            self._append_jitter_window(state.jitter_ns_window, jitter_ns)
+            self._log_scalar(f"{base}/source_dt_ms", source_dt_ns / 1e6)
+            self._log_scalar(f"{base}/recv_dt_ms", recv_dt_ns / 1e6)
+            self._log_scalar(f"{base}/jitter_ms", jitter_ns / 1e6)
+            self._log_scalar(
+                f"{base}/jitter_p95_ms",
+                self._percentile_ms(state.jitter_ns_window, 0.95),
+            )
+
+        if frame.source_frame_seq is not None and state.prev_source_frame_seq is not None:
+            dropped = max(0, frame.source_frame_seq - state.prev_source_frame_seq - 1)
+            self._log_scalar(f"{base}/drop_gap_frames", float(dropped))
+
+        state.prev_recv_ts_ns = frame.recv_ts_ns
+        state.prev_source_ts_ns = frame.source_ts_ns
+        state.prev_source_frame_seq = frame.source_frame_seq
+
+    def _append_jitter_window(self, window: deque[int], value: int) -> None:
+        """Append to a bounded jitter window."""
+        window.append(value)
+        while len(window) > self._config.jitter_window_size:
+            window.popleft()
+
+    def _percentile_ms(self, values_ns: deque[int], fraction: float) -> float:
+        """Return percentile value in milliseconds for a small rolling window."""
+        if not values_ns:
+            return 0.0
+        sorted_values = sorted(values_ns)
+        index = int(round((len(sorted_values) - 1) * fraction))
+        return sorted_values[index] / 1e6
+
+    def _log_scalar(self, path: str, value: float) -> None:
+        """Log one scalar point, with compatibility across rerun SDK versions."""
+        if hasattr(self._rr, "Scalar"):
+            self._rr.log(path, self._rr.Scalar(value))
+            return
+        if hasattr(self._rr, "Scalars"):
+            self._rr.log(path, self._rr.Scalars([value]))
 
 
 def _rotate_vector_by_quaternion(

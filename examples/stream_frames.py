@@ -9,6 +9,8 @@ from __future__ import annotations
 import argparse
 
 from hand_tracking_sdk import (
+    HandFrame,
+    HeadFrame,
     HTSClient,
     HTSClientConfig,
     StreamOutput,
@@ -28,6 +30,12 @@ def _parse_args() -> argparse.Namespace:
     parser.add_argument("--port", type=int, default=8000, help="Host bind/connect port.")
     parser.add_argument("--timeout", type=float, default=1.0, help="I/O timeout in seconds.")
     parser.add_argument(
+        "--output",
+        choices=(StreamOutput.FRAMES.value,),
+        default=StreamOutput.FRAMES.value,
+        help="Frame output mode. Includes optional head frames when available.",
+    )
+    parser.add_argument(
         "--max-frames",
         type=int,
         default=0,
@@ -46,19 +54,36 @@ def _main() -> int:
             host=args.host,
             port=args.port,
             timeout_s=args.timeout,
-            output=StreamOutput.FRAMES,
+            output=StreamOutput(args.output),
         )
     )
 
     emitted = 0
     for frame in client.iter_events():
         emitted += 1
+        if isinstance(frame, HeadFrame):
+            print(
+                "frame"
+                f" seq={frame.sequence_id}"
+                f" side={frame.side.value}"
+                f" frame_id={frame.frame_id}"
+                f" recv_ts_ns={frame.recv_ts_ns}"
+                f" source_ts_ns={frame.source_ts_ns}"
+                f" source_frame_seq={frame.source_frame_seq}"
+                f" head=({frame.head.x:.3f}, {frame.head.y:.3f}, {frame.head.z:.3f})"
+            )
+            if max_frames is not None and emitted >= max_frames:
+                break
+            continue
+        assert isinstance(frame, HandFrame)
         print(
             "frame"
             f" seq={frame.sequence_id}"
             f" side={frame.side.value}"
             f" frame_id={frame.frame_id}"
             f" recv_ts_ns={frame.recv_ts_ns}"
+            f" source_ts_ns={frame.source_ts_ns}"
+            f" source_frame_seq={frame.source_frame_seq}"
             f" wrist=({frame.wrist.x:.3f}, {frame.wrist.y:.3f}, {frame.wrist.z:.3f})"
             f" landmarks={len(frame.landmarks.points)}"
         )

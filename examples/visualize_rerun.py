@@ -3,6 +3,14 @@
 Example:
     uv run --with rerun-sdk python examples/visualize_rerun.py \\
         --transport tcp_server --host 0.0.0.0 --port 8000
+
+To include optional head frame visualization:
+    uv run --with rerun-sdk python examples/visualize_rerun.py \\
+        --transport tcp_server --host 0.0.0.0 --port 8000 --output frames
+
+To render pose coordinate frames (head/wrist):
+    uv run --with rerun-sdk python examples/visualize_rerun.py \\
+        --transport tcp_server --host 0.0.0.0 --port 8000 --show-coordinate-frames
 """
 
 from __future__ import annotations
@@ -17,6 +25,7 @@ from hand_tracking_sdk import (
     HTSClientConfig,
     RerunVisualizer,
     RerunVisualizerConfig,
+    StreamEvent,
     StreamOutput,
     TransportMode,
 )
@@ -62,6 +71,24 @@ def _parse_args() -> argparse.Namespace:
         default="hand-tracking-sdk",
         help="Rerun application id.",
     )
+    parser.add_argument(
+        "--show-jitter",
+        action="store_true",
+        default=False,
+        help="Enable jitter/drop scalar timeseries panel.",
+    )
+    parser.add_argument(
+        "--jitter-window-size",
+        type=int,
+        default=200,
+        help="Rolling window size for jitter percentile metrics.",
+    )
+    parser.add_argument(
+        "--show-coordinate-frames",
+        action="store_true",
+        default=False,
+        help="Render local XYZ frame axes for wrist and head poses.",
+    )
     return parser.parse_args()
 
 
@@ -83,6 +110,9 @@ def _main() -> int:
     visualizer = RerunVisualizer(
         RerunVisualizerConfig(
             application_id=args.application_id,
+            show_jitter_panel=args.show_jitter,
+            jitter_window_size=args.jitter_window_size,
+            show_coordinate_frames=args.show_coordinate_frames,
         )
     )
 
@@ -92,7 +122,7 @@ def _main() -> int:
     return 0
 
 
-def _stream_events(events: Iterable[object]) -> Iterable[object]:
+def _stream_events(events: Iterable[StreamEvent]) -> Iterable[StreamEvent]:
     """Yield events unchanged so script remains easy to extend for preprocessing."""
     yield from events
 

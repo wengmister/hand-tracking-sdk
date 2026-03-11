@@ -15,6 +15,7 @@ class HandSide(StrEnum):
 
     LEFT = "Left"
     RIGHT = "Right"
+    HEAD = "Head"
 
 
 class PacketType(StrEnum):
@@ -22,6 +23,7 @@ class PacketType(StrEnum):
 
     WRIST = "wrist"
     LANDMARKS = "landmarks"
+    POSE = "pose"
 
 
 class JointName(StrEnum):
@@ -67,6 +69,14 @@ _JOINT_INDEX_BY_NAME: dict[str, int] = {
 
 
 @dataclass(frozen=True, slots=True)
+class PacketDebugInfo:
+    """Optional source-side metadata attached to one streamed packet."""
+
+    source_frame_seq: int | None = None
+    source_ts_ns: int | None = None
+
+
+@dataclass(frozen=True, slots=True)
 class WristPose:
     """Cartesian wrist position and orientation quaternion."""
 
@@ -103,6 +113,44 @@ class WristPose:
         :returns:
             Parsed wrist pose instance.
         """
+        return cls(
+            x=float(values["x"]),
+            y=float(values["y"]),
+            z=float(values["z"]),
+            qx=float(values["qx"]),
+            qy=float(values["qy"]),
+            qz=float(values["qz"]),
+            qw=float(values["qw"]),
+        )
+
+
+@dataclass(frozen=True, slots=True)
+class HeadPose:
+    """Cartesian head position and orientation quaternion."""
+
+    x: float
+    y: float
+    z: float
+    qx: float
+    qy: float
+    qz: float
+    qw: float
+
+    def to_dict(self) -> dict[str, float]:
+        """Serialize head pose into a mapping-friendly dictionary."""
+        return {
+            "x": self.x,
+            "y": self.y,
+            "z": self.z,
+            "qx": self.qx,
+            "qy": self.qy,
+            "qz": self.qz,
+            "qw": self.qw,
+        }
+
+    @classmethod
+    def from_dict(cls, values: Mapping[str, Any]) -> HeadPose:
+        """Build :class:`HeadPose` from serialized mapping data."""
         return cls(
             x=float(values["x"]),
             y=float(values["y"]),
@@ -206,6 +254,7 @@ class WristPacket:
     side: HandSide
     kind: PacketType
     data: WristPose
+    debug: PacketDebugInfo | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -215,6 +264,17 @@ class LandmarksPacket:
     side: HandSide
     kind: PacketType
     data: HandLandmarks
+    debug: PacketDebugInfo | None = None
 
 
-ParsedPacket = WristPacket | LandmarksPacket
+@dataclass(frozen=True, slots=True)
+class HeadPosePacket:
+    """Parsed head pose packet."""
+
+    side: HandSide
+    kind: PacketType
+    data: HeadPose
+    debug: PacketDebugInfo | None = None
+
+
+ParsedPacket = WristPacket | LandmarksPacket | HeadPosePacket

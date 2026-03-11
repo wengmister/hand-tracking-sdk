@@ -12,7 +12,7 @@ from hand_tracking_sdk.exceptions import (
     ClientConfigurationError,
     ParseError,
 )
-from hand_tracking_sdk.frame import HandFrame, HandFrameAssembler
+from hand_tracking_sdk.frame import HandFrame, HandFrameAssembler, HeadFrame
 from hand_tracking_sdk.models import HandSide, ParsedPacket
 from hand_tracking_sdk.parser import parse_line
 from hand_tracking_sdk.transport import (
@@ -169,7 +169,7 @@ class _LineReceiver(Protocol):
     def iter_lines(self) -> Iterator[str]: ...
 
 
-StreamEvent = ParsedPacket | HandFrame
+StreamEvent = ParsedPacket | HandFrame | HeadFrame
 """Public event type emitted by :class:`HTSClient` streaming methods."""
 
 
@@ -191,7 +191,10 @@ class HTSClient:
         """
         self._config = config
         self._receiver_factory = receiver_factory
-        self._frame_assembler = HandFrameAssembler(include_wall_time=config.include_wall_time)
+        self._frame_assembler = HandFrameAssembler(
+            include_wall_time=config.include_wall_time,
+            include_head_frames=config.output in (StreamOutput.FRAMES, StreamOutput.BOTH),
+        )
         self._stats = ClientStats()
 
     def iter_events(self) -> Iterator[StreamEvent]:

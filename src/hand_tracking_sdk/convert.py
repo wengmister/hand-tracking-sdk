@@ -5,6 +5,32 @@ from __future__ import annotations
 from hand_tracking_sdk.frame import HandFrame
 from hand_tracking_sdk.models import HandLandmarks, WristPose
 
+# Type alias for a 3×3 matrix stored as a tuple-of-tuples.
+Matrix3x3 = tuple[
+    tuple[float, float, float],
+    tuple[float, float, float],
+    tuple[float, float, float],
+]
+
+# Canonical basis transforms from Unity left-handed coordinates.
+# Unity left-handed uses x=right, y=up, z=forward.
+#
+# RFU target basis uses x=right, y=forward, z=up.
+# Mapping: (x, y, z) -> (x, z, y)
+BASIS_UNITY_LEFT_TO_RFU: Matrix3x3 = (
+    (1.0, 0.0, 0.0),
+    (0.0, 0.0, 1.0),
+    (0.0, 1.0, 0.0),
+)
+#
+# FLU target basis uses x=forward, y=left, z=up.
+# Mapping: (x, y, z) -> (z, -x, y)
+BASIS_UNITY_LEFT_TO_FLU: Matrix3x3 = (
+    (0.0, 0.0, 1.0),
+    (-1.0, 0.0, 0.0),
+    (0.0, 1.0, 0.0),
+)
+
 
 def unity_left_to_right_position(x: float, y: float, z: float) -> tuple[float, float, float]:
     """Convert a Unity left-handed position into a right-handed position.
@@ -144,6 +170,7 @@ def convert_hand_frame_unity_left_to_right(frame: HandFrame) -> HandFrame:
         source_ts_ns=frame.source_ts_ns,
         wrist_recv_ts_ns=frame.wrist_recv_ts_ns,
         landmarks_recv_ts_ns=frame.landmarks_recv_ts_ns,
+        source_frame_seq=frame.source_frame_seq,
     )
 
 
@@ -287,3 +314,149 @@ def _matmul(
             a[2][0] * b[0][2] + a[2][1] * b[1][2] + a[2][2] * b[2][2],
         ),
     )
+
+
+def _transpose(m: Matrix3x3) -> Matrix3x3:
+    """Transpose a 3×3 matrix.
+
+    :param m:
+        Input matrix.
+    :returns:
+        Transposed matrix.
+    """
+    return (
+        (m[0][0], m[1][0], m[2][0]),
+        (m[0][1], m[1][1], m[2][1]),
+        (m[0][2], m[1][2], m[2][2]),
+    )
+
+
+# ---------------------------------------------------------------------------
+# General-purpose basis transform utilities
+# ---------------------------------------------------------------------------
+
+
+def basis_transform_position(
+    pos: tuple[float, float, float],
+    basis: Matrix3x3,
+) -> tuple[float, float, float]:
+    """Apply a basis matrix to a position vector.
+
+    Computes ``result = basis @ pos``.
+
+    :param pos:
+        Input position ``(x, y, z)``.
+    :param basis:
+        3×3 basis change matrix.
+    :returns:
+        Transformed position.
+    """
+    return (
+        basis[0][0] * pos[0] + basis[0][1] * pos[1] + basis[0][2] * pos[2],
+        basis[1][0] * pos[0] + basis[1][1] * pos[1] + basis[1][2] * pos[2],
+        basis[2][0] * pos[0] + basis[2][1] * pos[1] + basis[2][2] * pos[2],
+    )
+
+
+def basis_transform_rotation(
+    qx: float,
+    qy: float,
+    qz: float,
+    qw: float,
+    basis: Matrix3x3,
+) -> tuple[float, float, float, float]:
+    """Transform a quaternion orientation via a basis change matrix.
+
+    Computes ``R_new = basis @ R @ basis^T`` and returns the result as a
+    normalized quaternion ``(qx, qy, qz, qw)``.
+
+    :param qx:
+        Quaternion X component.
+    :param qy:
+        Quaternion Y component.
+    :param qz:
+        Quaternion Z component.
+    :param qw:
+        Quaternion W component.
+    :param basis:
+        3×3 basis change matrix.
+    :returns:
+        Transformed quaternion ``(qx, qy, qz, qw)``.
+    """
+    rot = _quaternion_to_matrix(qx=qx, qy=qy, qz=qz, qw=qw)
+    transformed = _matmul(_matmul(basis, rot), _transpose(basis))
+    return _matrix_to_quaternion(transformed)
+
+
+def basis_transform_rotation_matrix(
+    qx: float,
+    qy: float,
+    qz: float,
+    qw: float,
+    basis: Matrix3x3,
+) -> Matrix3x3:
+    """Transform a quaternion orientation via a basis change matrix.
+
+    Same operation as :func:`basis_transform_rotation` but returns the
+    result as a 3×3 rotation matrix instead of a quaternion.
+
+    :param qx:
+        Quaternion X component.
+    :param qy:
+        Quaternion Y component.
+    :param qz:
+        Quaternion Z component.
+    :param qw:
+        Quaternion W component.
+    :param basis:
+        3×3 basis change matrix.
+    :returns:
+        Transformed 3×3 rotation matrix.
+    """
+    rot = _quaternion_to_matrix(qx=qx, qy=qy, qz=qz, qw=qw)
+    return _matmul(_matmul(basis, rot), _transpose(basis))
+
+
+def unity_left_to_rfu_position(x: float, y: float, z: float) -> tuple[float, float, float]:
+    """Convert Unity left-handed coordinates into RFU basis."""
+    return basis_transform_position((x, y, z), BASIS_UNITY_LEFT_TO_RFU)
+
+
+def unity_left_to_rfu_rotation(
+    qx: float,
+    qy: float,
+    qz: float,
+    qw: float,
+) -> tuple[float, float, float, float]:
+    """Convert Unity left-handed quaternion into RFU basis."""
+    return basis_transform_rotation(qx, qy, qz, qw, BASIS_UNITY_LEFT_TO_RFU)
+
+
+def unity_left_to_rfu_rotation_matrix(
+    qx: float,
+    qy: float,
+    qz: float,
+    qw: float,
+) -> Matrix3x3:
+    """Convert Unity left-handed quaternion into RFU rotation matrix."""
+    return basis_transform_rotation_matrix(qx, qy, qz, qw, BASIS_UNITY_LEFT_TO_RFU)
+
+
+def unity_left_to_flu_rotation(
+    qx: float,
+    qy: float,
+    qz: float,
+    qw: float,
+) -> tuple[float, float, float, float]:
+    """Convert Unity left-handed quaternion into FLU basis."""
+    return basis_transform_rotation(qx, qy, qz, qw, BASIS_UNITY_LEFT_TO_FLU)
+
+
+def unity_left_to_flu_rotation_matrix(
+    qx: float,
+    qy: float,
+    qz: float,
+    qw: float,
+) -> Matrix3x3:
+    """Convert Unity left-handed quaternion into FLU rotation matrix."""
+    return basis_transform_rotation_matrix(qx, qy, qz, qw, BASIS_UNITY_LEFT_TO_FLU)

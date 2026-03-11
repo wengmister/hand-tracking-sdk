@@ -1,4 +1,4 @@
-from hand_tracking_sdk import HandFrameAssembler, HandSide
+from hand_tracking_sdk import HandFrame, HandFrameAssembler, HandSide
 
 
 def test_frame_emits_only_when_both_components_present() -> None:
@@ -18,6 +18,7 @@ def test_frame_emits_only_when_both_components_present() -> None:
     )
 
     assert frame is not None
+    assert isinstance(frame, HandFrame)
     assert frame.side == HandSide.RIGHT
     assert frame.frame_id == "hts_right_hand"
     assert frame.sequence_id == 0
@@ -74,6 +75,7 @@ def test_stale_updates_are_ignored() -> None:
         recv_time_unix_ns=130,
     )
     assert fresh is not None
+    assert isinstance(fresh, HandFrame)
     assert fresh.sequence_id == 1
     assert fresh.wrist_recv_ts_ns == 130
 
@@ -124,3 +126,46 @@ def test_custom_frame_id_mapping_is_applied() -> None:
 
     assert frame is not None
     assert frame.frame_id == "left_hand_link"
+
+
+def test_frame_uses_source_debug_metadata_when_available() -> None:
+    assembler = HandFrameAssembler()
+
+    assembler.push_line(
+        "Right wrist | f = 7 | t = 1000:, 0.1, 0.2, 0.3, 0.0, 0.0, 0.0, 1.0",
+        recv_ts_ns=10,
+        recv_time_unix_ns=10,
+    )
+    frame = assembler.push_line(
+        "Right landmarks | f = 7 | t = 1000:, " + ", ".join(str(i / 100.0) for i in range(63)),
+        recv_ts_ns=20,
+        recv_time_unix_ns=20,
+    )
+
+    assert frame is not None
+    assert frame.source_ts_ns == 1000
+    assert frame.source_frame_seq == 7
+
+
+def test_head_pose_packet_is_ignored_by_frame_assembly() -> None:
+    assembler = HandFrameAssembler()
+
+    frame = assembler.push_line("Head pose:, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0")
+
+    assert frame is None
+
+
+def test_head_pose_packet_emits_head_frame_when_enabled() -> None:
+    assembler = HandFrameAssembler(include_head_frames=True)
+
+    frame = assembler.push_line(
+        "Head pose | f = 3 | t = 456:, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0",
+        recv_ts_ns=33,
+        recv_time_unix_ns=44,
+    )
+
+    assert frame is not None
+    assert frame.side == HandSide.HEAD
+    assert frame.sequence_id == 0
+    assert frame.source_frame_seq == 3
+    assert frame.source_ts_ns == 456
